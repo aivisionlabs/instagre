@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+
+  --color-brand-deep: #0f3460;
+  --color-primary: #1a73e8;
+  --color-primary-container: #1557b0;
+  --color-secondary: #2563eb;
+  --color-surface: #f8f9fb;
+  --color-on-surface: #191c1e;
+  --color-success-vibrant: #16a34a;
+  --color-success-soft: #dcfce7;
+  --color-warning-vibrant: #d97706;
+  --color-warning-soft: #fef3c7;
+  --color-danger-vibrant: #dc2626;
+  --color-danger-soft: #fee2e2;
+  --color-text-primary: #111827;
+  --color-text-secondary: #4b5563;
+}
+
+@layer utilities {
+  .btn-3d {
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    box-shadow: 0 4px 0 #1557b0;
+  }
+  .btn-3d:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #1557b0;
+  }
+  .btn-3d-success {
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    box-shadow: 0 4px 0 #15803d;
+  }
+  .btn-3d-success:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #15803d;
+  }
+  .btn-3d-warning {
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    box-shadow: 0 4px 0 #b45309;
+  }
+  .btn-3d-warning:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #b45309;
+  }
+}
+

@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Full-bleed background so this doubles as a maskable icon (Android masks
+       to its own shape; content stays inside the central safe zone). -->
+  <rect width="512" height="512" fill="#003e7e"/>
+  <!-- Subtle gradient sheen -->
+  <defs>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a56a0"/>
+      <stop offset="1" stop-color="#003e7e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sheen)"/>
+  <!-- Serif "W" within the maskable safe zone (~centre 60%) -->
+  <text x="256" y="256" fill="#ffffff" font-family="'DM Serif Display', Georgia, serif"
+        font-size="300" font-weight="700" text-anchor="middle"
+        dominant-baseline="central">W</text>
+  <!-- Accent underline -->
+  <rect x="176" y="372" width="160" height="16" rx="8" fill="#accbff"/>
+</svg>
