@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type PointerEvent } from "react";
 import { Word, WordStatus } from "../types";
 import { speakWord } from "../utils/speech";
 import {
@@ -48,22 +48,39 @@ export default function BrowseView({
   const [showLetters, setShowLetters] = useState(false);
   const [swipeDir, setSwipeDir] = useState<"up" | "down">("up");
 
-  const filteredWords = words
+  // Tracks a pointer gesture on the (flipped) back face so we can tell a
+  // navigation flick apart from a content scroll. Framer's drag="y" can't
+  // see gestures that start inside the back face's overflow-y-auto scroller,
+  // so the back face navigates via these handlers instead.
+  const backGesture = useRef<{ y: number; scrollTop: number; time: number } | null>(null);
+  const suppressClick = useRef(false);
+
+  const lettersWords = words
     .filter((w) => w.word.toUpperCase().startsWith(selectedLetter))
     .sort((a, b) => a.word.localeCompare(b.word));
 
+  // Learned words leave the browse stack; Tough Nut + Unseen stay visible here.
+  const filteredWords = lettersWords.filter((w) => w.status !== "Learned It");
+
   const total = filteredWords.length;
-  const learnedInLetter = filteredWords.filter(
+  const lettersTotal = lettersWords.length;
+  const learnedInLetter = lettersWords.filter(
     (w) => w.status === "Learned It",
   ).length;
   const percentage =
-    total > 0 ? Math.round((learnedInLetter / total) * 100) : 0;
+    lettersTotal > 0 ? Math.round((learnedInLetter / lettersTotal) * 100) : 0;
 
   // Keep focusIndex valid when the letter (and therefore the list) changes.
   useEffect(() => {
     setFocusIndex(0);
     setIsFlipped(false);
   }, [selectedLetter]);
+
+  // When a word leaves the stack (marked Learned) the list shrinks; clamp the
+  // focus so we never point past the end and the next word slides into view.
+  useEffect(() => {
+    if (total > 0 && focusIndex >= total) setFocusIndex(total - 1);
+  }, [total, focusIndex]);
 
   const current = filteredWords[focusIndex];
 
@@ -74,6 +91,57 @@ export default function BrowseView({
     setFocusIndex((prev) =>
       dir === "up" ? (prev + 1) % total : (prev - 1 + total) % total,
     );
+  };
+
+  // Marking Learned removes the word from this stack, so the next word slides
+  // into the current index on its own — we just animate up and unflip. (The
+  // clamp effect handles the case where the removed word was the last one.)
+  const markLearned = (wordId: string) => {
+    setSwipeDir("up");
+    setIsFlipped(false);
+    onUpdateStatus(wordId, "Learned It");
+  };
+
+  const getBackScroller = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>("[data-back-scroll]");
+
+  const handleBackPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    const scroller = getBackScroller(e.currentTarget);
+    backGesture.current = {
+      y: e.clientY,
+      scrollTop: scroller?.scrollTop ?? 0,
+      time: e.timeStamp,
+    };
+    suppressClick.current = false;
+  };
+
+  const handleBackPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    const g = backGesture.current;
+    backGesture.current = null;
+    if (!g) return;
+
+    const scroller = getBackScroller(e.currentTarget);
+    // If the content actually scrolled during this gesture, it was a scroll,
+    // not a navigation swipe — leave the card where it is.
+    const scrolled = Math.abs((scroller?.scrollTop ?? 0) - g.scrollTop) > 4;
+    const dy = g.y - e.clientY; // positive => moved up
+    const dt = e.timeStamp - g.time;
+    const velocity = dt > 0 ? dy / dt : 0; // px per ms
+
+    const isFlick = Math.abs(velocity) > 0.4 || Math.abs(dy) > 70;
+
+    if (!scrolled && isFlick) {
+      suppressClick.current = true; // don't let the trailing click unflip
+      goTo(dy > 0 ? "up" : "down");
+    }
+  };
+
+  const handleBackClick = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    setIsFlipped(false);
   };
 
   const letterPercentage = (letter: string) => {
@@ -121,7 +189,7 @@ export default function BrowseView({
           <div className="flex items-center gap-3 mt-4">
             <div className="flex-1">
               <p className="text-[11px] font-bold tracking-wider uppercase text-primary mb-1.5">
-                {learnedInLetter} / {total} Learned ({percentage}%)
+                {learnedInLetter} / {lettersTotal} Learned ({percentage}%)
               </p>
               <div className="h-1.5 w-full bg-gray-150 rounded-full overflow-hidden">
                 <div
@@ -175,14 +243,30 @@ export default function BrowseView({
               custom={swipeDir}
               initial={{ opacity: 0, y: swipeDir === "up" ? 120 : -120 }}
               animate={{ opacity: 1, y: 0, rotateY: isFlipped ? 180 : 0 }}
-              exit={{ opacity: 0, y: swipeDir === "up" ? -120 : 120 }}
+              exit={{
+                opacity: 0,
+                y: swipeDir === "up" ? -120 : 120,
+                // Snap the flip back to the front instantly so the outgoing card
+                // never slides away showing its (mirrored) back-face content.
+                rotateY: 0,
+                transition: {
+                  y: { type: "spring", damping: 26, stiffness: 170 },
+                  opacity: { duration: 0.2 },
+                  rotateY: { duration: 0 },
+                },
+              }}
               transition={{ type: "spring", damping: 26, stiffness: 170 }}
-              drag="y"
+              drag={isFlipped ? false : "y"}
               dragConstraints={{ top: 0, bottom: 0 }}
               dragElastic={0.6}
               onDragEnd={(_, info) => {
-                if (info.offset.y < -60) goTo("up");
-                else if (info.offset.y > 60) goTo("down");
+                const isSwipeGesture = Math.abs(info.velocity.y) > 300;
+                const isLargeDrag = Math.abs(info.offset.y) > 100;
+
+                if (isSwipeGesture || isLargeDrag) {
+                  if (info.offset.y < 0 || info.velocity.y < 0) goTo("up");
+                  else goTo("down");
+                }
               }}
               className="absolute inset-0 [transform-style:preserve-3d]"
             >
@@ -235,22 +319,21 @@ export default function BrowseView({
                 </div>
 
                 {/* Floating status actions */}
-                <div className="absolute right-5 bottom-20 flex flex-col items-center gap-3">
+                <div className="absolute right-5 bottom-20 flex flex-col items-center gap-3 opacity-70 hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onUpdateStatus(current.id, "Learned It");
-                      goTo("up");
+                      markLearned(current.id);
                     }}
-                    className={`w-14 h-14 rounded-full border-2 shadow-lg flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                    className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
                       current.status === "Learned It"
-                        ? "bg-success-vibrant border-success-vibrant text-white"
-                        : "bg-white border-success-vibrant text-success-vibrant hover:bg-success-vibrant hover:text-white"
+                        ? "bg-success-vibrant/90 border-success-vibrant text-white"
+                        : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
                     }`}
                     title="Mark as Learned"
                   >
-                    <Check className="w-6 h-6" />
+                    <Check className="w-5 h-5" />
                   </button>
                   <div className="flex flex-col items-center gap-1">
                     <button
@@ -260,10 +343,10 @@ export default function BrowseView({
                         onUpdateStatus(current.id, "Tough Nut");
                         goTo("up");
                       }}
-                      className={`w-14 h-14 rounded-full border-2 shadow-lg flex items-center justify-center text-2xl transition-all cursor-pointer active:scale-95 ${
+                      className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center text-xl transition-all cursor-pointer active:scale-95 ${
                         current.status === "Tough Nut"
-                          ? "bg-warning-vibrant border-warning-vibrant"
-                          : "bg-white border-warning-soft hover:scale-105"
+                          ? "bg-warning-vibrant/90 border-warning-vibrant"
+                          : "bg-white/70 border-warning-soft hover:scale-105"
                       }`}
                       title="Mark as Tough Nut"
                     >
@@ -288,8 +371,13 @@ export default function BrowseView({
 
               {/* ============================== BACK FACE */}
               <div
-                onClick={() => setIsFlipped(false)}
-                className={`absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white flex flex-col cursor-pointer ${
+                onClick={handleBackClick}
+                onPointerDown={handleBackPointerDown}
+                onPointerUp={handleBackPointerUp}
+                onPointerCancel={() => {
+                  backGesture.current = null;
+                }}
+                className={`absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-white flex flex-col cursor-pointer [touch-action:pan-y] ${
                   isFlipped ? "" : "pointer-events-none"
                 }`}
               >
@@ -324,8 +412,8 @@ export default function BrowseView({
 
                 {/* Scrollable detail body */}
                 <div
+                  data-back-scroll
                   className="flex-1 overflow-y-auto px-7 py-5 space-y-5"
-                  onClick={(e) => e.stopPropagation()}
                 >
                   <section className="space-y-1.5">
                     <h5 className="text-[11px] font-extrabold uppercase tracking-wider text-text-secondary">
@@ -385,6 +473,52 @@ export default function BrowseView({
                         ))}
                       </div>
                     </section>
+                  </div>
+                </div>
+
+                {/* Floating status actions (mirrors the front face) */}
+                <div
+                  className="absolute right-5 bottom-20 z-20 flex flex-col items-center gap-3 opacity-70 hover:opacity-100 transition-opacity"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      markLearned(current.id);
+                    }}
+                    className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                      current.status === "Learned It"
+                        ? "bg-success-vibrant/90 border-success-vibrant text-white"
+                        : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
+                    }`}
+                    title="Mark as Learned"
+                  >
+                    <Check className="w-5 h-5" />
+                  </button>
+                  <div className="flex flex-col items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUpdateStatus(current.id, "Tough Nut");
+                        goTo("up");
+                      }}
+                      className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center text-xl transition-all cursor-pointer active:scale-95 ${
+                        current.status === "Tough Nut"
+                          ? "bg-warning-vibrant/90 border-warning-vibrant"
+                          : "bg-white/70 border-warning-soft hover:scale-105"
+                      }`}
+                      title="Mark as Tough Nut"
+                    >
+                      🥜
+                    </button>
+                    <span className="text-[9px] font-bold tracking-wider uppercase text-gray-400 leading-none text-center">
+                      Tough
+                      <br />
+                      Nut
+                    </span>
                   </div>
                 </div>
 
