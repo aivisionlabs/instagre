@@ -33,7 +33,7 @@ export default function SplashView({ onGetStarted, onLogIn }: SplashViewProps) {
           </div>
 
           <h1 className="font-serif text-[48px] uppercase tracking-wide leading-tight mb-2">
-            WordCrack
+            InstaGRE
           </h1>
           
           <p className="font-sans text-sm text-[#d6e3ff]/90 max-w-[280px] mx-auto leading-relaxed">

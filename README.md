@@ -1,4 +1,4 @@
-# WordCrack
+# InstaGRE
 
 Master every GRE word. One swipe at a time.
 
@@ -41,10 +41,10 @@ vercel --prod    # production
 
 The Android app is a thin wrapper around the hosted PWA, verified against the domain via Digital Asset Links.
 
-1. Deploy the PWA to production and note the URL (e.g. `https://wordcrack.example.com`).
+1. Deploy the PWA to production and note the URL (e.g. `https://instagre.example.com`).
 2. Scaffold the TWA with Bubblewrap:
    ```bash
-   npx @bubblewrap/cli init --manifest https://wordcrack.example.com/manifest.webmanifest
+   npx @bubblewrap/cli init --manifest https://instagre.example.com/manifest.webmanifest
    npx @bubblewrap/cli build
    ```
    This produces a signing keystore and a signed `.aab`.

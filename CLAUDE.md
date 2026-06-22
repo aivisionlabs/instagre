@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-WordCrack is a **client-only** React 19 + Vite SPA for studying GRE vocabulary, shipped as an installable **PWA** and published to the Play Store as a **Trusted Web Activity (TWA)** wrapper. There is no backend, no API calls, and no server at runtime — all data lives in the bundle and in `localStorage`.
+InstaGRE is a **client-only** React 19 + Vite SPA for studying GRE vocabulary, shipped as an installable **PWA** and published to the Play Store as a **Trusted Web Activity (TWA)** wrapper. There is no backend, no API calls, and no server at runtime — all data lives in the bundle and in `localStorage`.
 
 - **PWA:** `vite-plugin-pwa` (config in `vite.config.ts`) generates the service worker (`sw.js`), web manifest, and registration on `build`. The full app shell is precached (`registerType: 'autoUpdate'`), so the app works fully offline after first load; Google Fonts are runtime-cached. Icons derive from `public/icon-master.svg` via `npm run icons` → `public/icons/`. `vercel.json` serves `sw.js`/`manifest.webmanifest` with `must-revalidate` so updates never get stuck behind a cache. TWA domain verification is `public/.well-known/assetlinks.json` (placeholders — fill with the real package name + signing SHA-256). See `README.md` for the Bubblewrap/Play Store flow.
 
@@ -24,10 +24,10 @@ WordCrack is a **client-only** React 19 + Vite SPA for studying GRE vocabulary, 
 ### State & persistence
 
 All persistence is `localStorage`, written immediately on every mutation. Keys:
-- `wordcrack_words_database` — the full `Word[]` including per-word `status`. On load, `App` calls `loadWords()` from `src/data/version.ts`, which **reconciles** the cache against the bundled seed: `initialWords` is the source of truth for word *content*, the cache only for the user's `status`. This means edits/additions to `wordsData.ts` reach existing users on next load while their progress is preserved (this replaced the old "stale cache" footgun).
-- `wordcrack_data_version` — `SCHEMA_VERSION` stamp (in `src/data/version.ts`); bump it only for migrations that change the `Word` shape, not for content edits.
-- `wordcrack_has_started` — splash bypass flag.
-- `wordcrack_test_history` — `TestHistory[]`, managed inside `TestsView`.
+- `instagre_words_content` — cached global word content (definition, examples, …). On load, `App` calls `loadWordsCached()` from `src/data/version.ts`, which reads from cache or the bundled seed; `pullWords()` refreshes from Supabase in the background.
+- `instagre_progress_<userId>` — per-user mastered/toughNut flags, managed in `src/data/sync.ts`.
+- `instagre_has_started` — splash bypass flag.
+- `instagre_test_history` — `TestHistory[]`, managed inside `TestsView`.
 
 Word status changes flow through `App.handleUpdateStatus` → `triggerWordsSync` → `persistWords`, which both `setWords` and rewrites the cache. Always route mutations through this path so the cache stays consistent.
 

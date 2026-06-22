@@ -1,22 +1,38 @@
-import { useState, useEffect } from "react";
-import { Word, WordStatus, UserProfile } from "./types";
-import { loadWords, persistWords } from "./data/version";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Word, WordFlags, UserProfile } from "./types";
+import { loadWordsCached, pullWords } from "./data/version";
 import {
-  getCurrentProfile,
-  setCurrentMobile,
-  saveProfile,
-  logout as logoutUser,
+  getSession,
+  onAuthStateChange,
+  fetchProfile,
+  signUpWithMobileDob,
+  signInWithMobileDob,
+  signOut,
+  updateProfile,
   touchStreak,
-  getStreak,
 } from "./data/auth";
+import { setProgressFlags, initSync, teardownSync } from "./data/sync";
+import {
+  getContinueState,
+  resolveContinueTarget,
+  setContinueState,
+  type ContinueState,
+} from "./data/continue";
 import SplashView from "./components/SplashView";
 import SignupView from "./components/SignupView";
 import SignInView from "./components/SignInView";
+import LoadingView from "./components/LoadingView";
 import DashboardView from "./components/DashboardView";
 import BrowseView from "./components/BrowseView";
-import LearnedView from "./components/LearnedView";
+import MasteredView from "./components/MasteredView";
 import ToughNutView from "./components/ToughNutView";
 import ProfileView from "./components/ProfileView";
+import {
+  CoachMarkSpotlight,
+  hasSeenCoachMark,
+  markCoachMarkSeen,
+  type CoachMarkStep,
+} from "./components/CoachMarks";
 // import TestsView from './components/TestsView'; // Tests temporarily disabled
 
 import {
@@ -32,17 +48,49 @@ import {
 } from "lucide-react";
 import { speakWord } from "./utils/speech";
 
-type AppView = "splash" | "signup" | "signin" | "app";
-type Tab = "Home" | "Browse" | "Learned" | "Tough Nut" | "Profile";
+type AppView = "loading" | "splash" | "signup" | "signin" | "app";
+type Tab = "Home" | "Browse" | "Mastered" | "Tough Nut" | "Profile";
+
+/** Map a raw Supabase/auth error to a friendly, user-facing message. */
+function authErrorMessage(e: unknown, ctx: "signup" | "signin"): string {
+  const msg =
+    (e as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
+  if (
+    msg.includes("already") ||
+    msg.includes("registered") ||
+    msg.includes("exists")
+  )
+    return "An account with this mobile number already exists. Please sign in.";
+  if (msg.includes("invalid") || msg.includes("credential"))
+    return "Invalid mobile number or date of birth.";
+  if (
+    msg.includes("fetch") ||
+    msg.includes("network") ||
+    msg.includes("offline")
+  )
+    return "You appear to be offline. Connect to the internet to continue.";
+  return ctx === "signup"
+    ? "Could not create your account. Please try again."
+    : "Could not sign you in. Please try again.";
+}
 
 export default function App() {
-  const [view, setView] = useState<AppView>("splash");
+  const [view, setView] = useState<AppView>("loading");
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [streak, setStreak] = useState(0);
 
   const [words, setWords] = useState<Word[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("Home");
   const [selectedLetter, setSelectedLetter] = useState<string>("A");
+  const [activeCoachMark, setActiveCoachMark] = useState<CoachMarkStep | null>(
+    null,
+  );
+  const [continueTarget, setContinueTarget] = useState<ContinueState | null>(
+    null,
+  );
+  const wordsRef = useRef<Word[]>([]);
+  const lastSavedContinueRef = useRef<ContinueState | null>(null);
 
   // Search
   const [isSearchActive, setIsSearchActive] = useState(false);
@@ -51,65 +99,228 @@ export default function App() {
     null,
   );
 
-  // Boot: restore session if one exists, else decide splash vs signup.
   useEffect(() => {
-    const existing = getCurrentProfile();
-    if (existing) {
-      enterApp(existing);
-      return;
-    }
-    const started = localStorage.getItem("wordcrack_has_started") === "true";
-    setView(started ? "signup" : "splash");
-  }, []);
+    wordsRef.current = words;
+  }, [words]);
 
-  /** Load a user's data and land them in the app. */
-  const enterApp = (p: UserProfile) => {
-    setCurrentMobile(p.mobile);
-    setProfile(p);
-    setWords(loadWords(p.mobile));
-    setStreak(touchStreak(p.mobile));
+  /**
+   * Land a user in the app: paint instantly from cache, then refresh from
+   * Supabase in the background. `p` is the freshly-fetched profile (or null when
+   * we're restoring offline and fall back to the cached profile).
+   */
+  const enterApp = async (uid: string, p: UserProfile | null) => {
+    const cacheKey = `instagre_profile_${uid}`;
+    let prof = p;
+    if (!prof) {
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) prof = JSON.parse(raw) as UserProfile;
+      } catch {
+        /* ignore corrupt cache */
+      }
+    }
+    if (prof) localStorage.setItem(cacheKey, JSON.stringify(prof));
+
+    const cachedWords = loadWordsCached(uid);
+    const initialContinue = resolveContinueTarget(
+      cachedWords,
+      getContinueState(uid),
+    );
+    lastSavedContinueRef.current = initialContinue;
+
+    setUserId(uid);
+    setProfile(prof);
+    setWords(cachedWords); // instant paint from cache / seed
+    setSelectedLetter(initialContinue?.letter ?? "A");
+    setContinueTarget(initialContinue);
     setActiveTab("Home");
     setView("app");
+    initSync(uid);
+
+    // Background refresh (non-blocking).
+    void touchStreak(uid)
+      .then(setStreak)
+      .catch(() => {});
+    void pullWords(uid)
+      .then(setWords)
+      .catch(() => {});
   };
 
+  // Boot: restore a Supabase session if one exists, else show splash/signup.
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      const session = await getSession();
+      if (session) {
+        const uid = session.user.id;
+        const p = await fetchProfile(uid);
+        await enterApp(uid, p);
+      } else {
+        const started = localStorage.getItem("instagre_has_started") === "true";
+        setView(started ? "signup" : "splash");
+      }
+      // React to sign-out (including from another tab) + token changes.
+      unsub = onAuthStateChange((s) => {
+        if (!s) {
+          teardownSync();
+          setUserId(null);
+          setProfile(null);
+          setWords([]);
+          setView("signin");
+        }
+      });
+    })();
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dismissCoachMark = (step: CoachMarkStep) => {
+    markCoachMarkSeen(step);
+    setActiveCoachMark(null);
+  };
+
+  // Home coachmark: first time the user lands on the dashboard.
+  useEffect(() => {
+    if (view !== "app" || activeTab !== "Home") return;
+    if (hasSeenCoachMark("home")) return;
+    const timer = window.setTimeout(() => {
+      setActiveCoachMark((prev) => (prev === "home" ? prev : "home"));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [view, activeTab]);
+
+  useEffect(() => {
+    if (activeCoachMark === "home" && activeTab !== "Home") {
+      setActiveCoachMark(null);
+    }
+  }, [activeTab, activeCoachMark]);
+
   const handleGetStarted = () => {
-    localStorage.setItem("wordcrack_has_started", "true");
+    localStorage.setItem("instagre_has_started", "true");
     setView("signup");
   };
 
-  const handleSignup = (p: UserProfile) => {
-    saveProfile(p);
-    enterApp(p);
+  // Async auth handlers — they throw friendly errors that the views display.
+  const handleSignup = async (p: UserProfile) => {
+    try {
+      const { userId: uid, profile: prof } = await signUpWithMobileDob(p);
+      await enterApp(uid, prof);
+    } catch (e) {
+      throw new Error(authErrorMessage(e, "signup"));
+    }
   };
 
-  const handleSignIn = (p: UserProfile) => enterApp(p);
+  const handleSignIn = async (mobile: string, dob: string) => {
+    try {
+      const { userId: uid, profile: prof } = await signInWithMobileDob(
+        mobile,
+        dob,
+      );
+      await enterApp(uid, prof);
+    } catch (e) {
+      throw new Error(authErrorMessage(e, "signin"));
+    }
+  };
 
-  const handleLogout = () => {
-    logoutUser();
+  const handleLogout = async () => {
+    teardownSync();
+    await signOut();
+    setUserId(null);
     setProfile(null);
     setWords([]);
     setView("signin");
   };
 
   const handleUpdateProfile = (updated: UserProfile) => {
-    const saved = saveProfile(updated);
-    setProfile(saved);
+    if (!userId) return;
+    setProfile(updated); // optimistic
+    localStorage.setItem(`instagre_profile_${userId}`, JSON.stringify(updated));
+    void updateProfile(userId, updated).catch((e) => {
+      console.warn("[profile] update failed:", e?.message ?? e);
+    });
   };
 
-  // Persist word-status mutations through a single path (now per-user).
-  const triggerWordsSync = (updated: Word[]) => {
-    setWords(updated);
-    if (profile) persistWords(updated, profile.mobile);
-  };
-
-  const handleUpdateStatus = (wordId: string, newStatus: WordStatus) => {
-    triggerWordsSync(
-      words.map((w) => (w.id === wordId ? { ...w, status: newStatus } : w)),
+  // Toggle one or both learning flags for a word (they're independent).
+  // Optimistic: update UI immediately, then cache + enqueue the remote sync.
+  const handleSetFlags = (wordId: string, flags: Partial<WordFlags>) => {
+    const prev = words.find((w) => w.id === wordId);
+    const updated = words.map((w) =>
+      w.id === wordId ? { ...w, ...flags } : w,
     );
+    setWords(updated);
+    if (userId) {
+      const w = updated.find((x) => x.id === wordId);
+      if (w)
+        setProgressFlags(userId, wordId, {
+          mastered: w.mastered,
+          toughNut: w.toughNut,
+        });
+    }
+
+    // Contextual coachmarks after the user's first mastered / tough-nut mark.
+    if (
+      flags.mastered === true &&
+      !prev?.mastered &&
+      !hasSeenCoachMark("mastered-tab")
+    ) {
+      window.setTimeout(() => setActiveCoachMark("mastered-tab"), 780);
+    }
+    if (
+      flags.toughNut === true &&
+      !prev?.toughNut &&
+      !hasSeenCoachMark("tough-tab")
+    ) {
+      window.setTimeout(() => setActiveCoachMark("tough-tab"), 780);
+    }
   };
+
+  const selectLetter = (letter: string) => {
+    setSelectedLetter(letter);
+  };
+
+  useEffect(() => {
+    if (!userId) {
+      setContinueTarget(null);
+      return;
+    }
+    const next = resolveContinueTarget(words, getContinueState(userId));
+    setContinueTarget((prev) =>
+      prev?.letter === next?.letter && prev?.wordId === next?.wordId ? prev : next,
+    );
+  }, [userId, words]);
+
+  const handleSaveContinuePosition = useCallback(
+    (letter: string, wordId: string) => {
+      if (!userId) return;
+      const saved = { letter, wordId };
+
+      const lastSaved = lastSavedContinueRef.current;
+      const isSameSavedPosition =
+        lastSaved?.letter === saved.letter && lastSaved?.wordId === saved.wordId;
+      if (!isSameSavedPosition) {
+        setContinueState(userId, saved);
+        lastSavedContinueRef.current = saved;
+      }
+
+      const next = resolveContinueTarget(wordsRef.current, saved);
+      setContinueTarget((prev) =>
+        prev?.letter === next?.letter && prev?.wordId === next?.wordId ? prev : next,
+      );
+    },
+    [userId],
+  );
+
+  // Snapshot resume position when entering a letter — not live-linked to
+  // continueTarget, or saving the current card re-triggers restore in a loop.
+  const browseResumeWordId = useMemo(() => {
+    if (!userId) return null;
+    const state = getContinueState(userId);
+    if (state?.letter === selectedLetter) return state.wordId;
+    return null;
+  }, [userId, selectedLetter]);
 
   const navigateToLetterBrowse = (letter: string) => {
-    setSelectedLetter(letter);
+    selectLetter(letter);
     setActiveTab("Browse");
   };
 
@@ -123,17 +334,16 @@ export default function App() {
             w.definition.toLowerCase().includes(searchQuery.toLowerCase()),
         );
 
-  const learnedTotalCount = words.filter(
-    (w) => w.status === "Learned It",
-  ).length;
+  const masteredTotalCount = words.filter((w) => w.mastered).length;
 
   // -------------------------------------------------- Pre-app screens
+  if (view === "loading") return <LoadingView />;
   if (view === "splash")
     return (
       <SplashView
         onGetStarted={handleGetStarted}
         onLogIn={() => {
-          localStorage.setItem("wordcrack_has_started", "true");
+          localStorage.setItem("instagre_has_started", "true");
           setView("signin");
         }}
       />
@@ -156,8 +366,8 @@ export default function App() {
     );
 
   // -------------------------------------------------- Main app shell
-  const immersive = activeTab === "Browse"; // full-bleed, owns its own header
-  const initial = (profile?.fullName?.trim()?.[0] ?? "W").toUpperCase();
+  const immersive = activeTab === "Browse" || activeTab === "Mastered";
+  const initial = (profile?.fullName?.trim()?.[0] ?? "I").toUpperCase();
 
   return (
     <div className="bg-[#f3f4f6] min-h-screen text-text-primary font-sans antialiased selection:bg-primary selection:text-white">
@@ -165,9 +375,9 @@ export default function App() {
       {!immersive && (
         <header className="fixed top-0 w-full max-w-[600px] h-14 z-50 bg-primary text-white shadow-sm flex items-center justify-between px-4 left-1/2 -translate-x-1/2">
           <div className="flex items-center select-none">
-            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center shadow-sm">
-              <span className="font-serif text-primary text-lg font-black leading-none">
-                W
+            <div className="px-2.5 h-9 bg-white rounded-xl flex items-center justify-center shadow-sm">
+              <span className="font-serif text-primary text-base font-black leading-none tracking-tight">
+                InstaGRE
               </span>
             </div>
           </div>
@@ -216,6 +426,7 @@ export default function App() {
 
       {/* Main container */}
       <div
+        data-app-shell
         className={`max-w-[600px] mx-auto bg-surface flex flex-col pb-16 border-x border-gray-150 relative ${
           immersive ? "h-screen pt-0" : "min-h-screen pt-14"
         }`}
@@ -258,17 +469,21 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      <span
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                          word.status === "Learned It"
-                            ? "bg-success-soft text-success-vibrant"
-                            : word.status === "Tough Nut"
-                              ? "bg-warning-soft text-warning-vibrant"
-                              : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {word.status}
-                      </span>
+                      {!word.mastered && !word.toughNut && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-gray-100 text-gray-500">
+                          Unseen
+                        </span>
+                      )}
+                      {word.mastered && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-success-soft text-success-vibrant">
+                          Mastered
+                        </span>
+                      )}
+                      {word.toughNut && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-warning-soft text-warning-vibrant">
+                          Tough 🥜
+                        </span>
+                      )}
                       <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
                     </div>
                   </div>
@@ -279,11 +494,12 @@ export default function App() {
         )}
 
         {/* Views */}
-        <main className={immersive ? "flex-1" : "flex-1 p-4"}>
+        <main className={immersive ? "flex-1 min-h-0" : "flex-1 p-4"}>
           {activeTab === "Home" && (
             <DashboardView
               words={words}
               streak={streak}
+              continueLetter={continueTarget?.letter ?? null}
               onLetterSelect={navigateToLetterBrowse}
             />
           )}
@@ -292,25 +508,25 @@ export default function App() {
             <BrowseView
               words={words}
               selectedLetter={selectedLetter}
-              onSetSelectedLetter={setSelectedLetter}
-              onUpdateStatus={handleUpdateStatus}
+              resumeWordId={browseResumeWordId}
+              onSetSelectedLetter={selectLetter}
+              onSetFlags={handleSetFlags}
+              onSaveContinuePosition={handleSaveContinuePosition}
             />
           )}
 
-          {activeTab === "Learned" && (
-            <LearnedView
+          {activeTab === "Mastered" && (
+            <MasteredView
               words={words}
-              onUpdateStatus={handleUpdateStatus}
+              selectedLetter={selectedLetter}
+              onSetSelectedLetter={selectLetter}
+              onSetFlags={handleSetFlags}
               onNavigateToBrowseLetter={navigateToLetterBrowse}
             />
           )}
 
           {activeTab === "Tough Nut" && (
-            <ToughNutView
-              words={words}
-              onUpdateStatus={handleUpdateStatus}
-              onNavigateToBrowseLetter={navigateToLetterBrowse}
-            />
+            <ToughNutView words={words} onSetFlags={handleSetFlags} />
           )}
 
           {activeTab === "Profile" && profile && (
@@ -338,7 +554,7 @@ export default function App() {
             [
               { tab: "Home", label: "Home", Icon: Home },
               { tab: "Browse", label: "Browse", Icon: BookOpen },
-              { tab: "Learned", label: "Learned", Icon: CheckCircle },
+              { tab: "Mastered", label: "Mastered", Icon: CheckCircle },
               { tab: "Tough Nut", label: "Tough Nut", Icon: Brain },
               { tab: "Profile", label: "Profile", Icon: User },
             ] as const
@@ -346,13 +562,14 @@ export default function App() {
             const isActive = activeTab === tab;
             const showBadge =
               !isActive &&
-              ((tab === "Learned" && learnedTotalCount > 0) ||
-                (tab === "Tough Nut" &&
-                  words.some((w) => w.status === "Tough Nut")));
+              ((tab === "Mastered" && masteredTotalCount > 0) ||
+                (tab === "Tough Nut" && words.some((w) => w.toughNut)));
             return (
               <button
                 key={tab}
                 type="button"
+                data-nav-tab={tab}
+                data-coach-nav={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`relative flex flex-col items-center justify-center p-1 cursor-pointer transition-all ${
                   isActive
@@ -363,7 +580,7 @@ export default function App() {
                 {showBadge && (
                   <span
                     className={`absolute top-1 right-2 w-2 h-2 rounded-full ${
-                      tab === "Learned"
+                      tab === "Mastered"
                         ? "bg-success-vibrant"
                         : "bg-warning-vibrant"
                     }`}
@@ -391,17 +608,24 @@ export default function App() {
             </button>
 
             <div className="text-center space-y-2 pt-2">
-              <span
-                className={`text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider ${
-                  selectedWordForModal.status === "Learned It"
-                    ? "bg-success-soft text-success-vibrant"
-                    : selectedWordForModal.status === "Tough Nut"
-                      ? "bg-warning-soft text-warning-vibrant"
-                      : "bg-gray-100 text-gray-500"
-                }`}
-              >
-                {selectedWordForModal.status}
-              </span>
+              <div className="flex justify-center gap-1.5">
+                {!selectedWordForModal.mastered &&
+                  !selectedWordForModal.toughNut && (
+                    <span className="text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider bg-gray-100 text-gray-500">
+                      Unseen
+                    </span>
+                  )}
+                {selectedWordForModal.mastered && (
+                  <span className="text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider bg-success-soft text-success-vibrant">
+                    Mastered ✓
+                  </span>
+                )}
+                {selectedWordForModal.toughNut && (
+                  <span className="text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider bg-warning-soft text-warning-vibrant">
+                    Tough Nut 🥜
+                  </span>
+                )}
+              </div>
               <h2 className="font-serif text-3xl font-black text-gray-900 leading-none">
                 {selectedWordForModal.word}
               </h2>
@@ -433,45 +657,85 @@ export default function App() {
             </div>
 
             <div className="pt-2 border-t border-gray-100 space-y-2">
-              <div className="grid grid-cols-3 gap-2 font-bold text-[10px] uppercase text-center leading-none">
-                {(["Unseen", "Tough Nut", "Learned It"] as const).map(
-                  (status) => {
-                    const active = selectedWordForModal.status === status;
-                    const styles =
-                      status === "Unseen"
-                        ? active
-                          ? "bg-gray-200 border-gray-400 text-gray-800"
-                          : "bg-white border-gray-150 text-gray-500 hover:bg-gray-50"
-                        : status === "Tough Nut"
-                          ? active
-                            ? "bg-warning-soft border-warning-vibrant text-warning-vibrant"
-                            : "bg-white border-gray-150 text-warning-vibrant hover:bg-warning-soft/20"
-                          : active
-                            ? "bg-success-soft border-success-vibrant text-success-vibrant"
-                            : "bg-white border-gray-150 text-success-vibrant hover:bg-success-soft/20";
-                    return (
-                      <button
-                        key={status}
-                        type="button"
-                        onClick={() => {
-                          handleUpdateStatus(selectedWordForModal.id, status);
-                          setSelectedWordForModal(null);
-                        }}
-                        className={`p-2.5 rounded-xl border cursor-pointer ${styles}`}
-                      >
-                        {status === "Tough Nut"
-                          ? "Tough Nut 🥜"
-                          : status === "Learned It"
-                            ? "Learned It ✓"
-                            : "Unseen"}
-                      </button>
-                    );
-                  },
-                )}
+              <div className="grid grid-cols-2 gap-2 font-bold text-[10px] uppercase text-center leading-none">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = {
+                      ...selectedWordForModal,
+                      mastered: !selectedWordForModal.mastered,
+                    };
+                    handleSetFlags(selectedWordForModal.id, {
+                      mastered: next.mastered,
+                    });
+                    setSelectedWordForModal(next);
+                  }}
+                  className={`p-2.5 rounded-xl border cursor-pointer ${
+                    selectedWordForModal.mastered
+                      ? "bg-success-soft border-success-vibrant text-success-vibrant"
+                      : "bg-white border-gray-150 text-success-vibrant hover:bg-success-soft/20"
+                  }`}
+                >
+                  {selectedWordForModal.mastered
+                    ? "Mastered ✓"
+                    : "Mark Mastered"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = {
+                      ...selectedWordForModal,
+                      toughNut: !selectedWordForModal.toughNut,
+                    };
+                    handleSetFlags(selectedWordForModal.id, {
+                      toughNut: next.toughNut,
+                    });
+                    setSelectedWordForModal(next);
+                  }}
+                  className={`p-2.5 rounded-xl border cursor-pointer ${
+                    selectedWordForModal.toughNut
+                      ? "bg-warning-soft border-warning-vibrant text-warning-vibrant"
+                      : "bg-white border-gray-150 text-warning-vibrant hover:bg-warning-soft/20"
+                  }`}
+                >
+                  {selectedWordForModal.toughNut
+                    ? "Tough Nut 🥜"
+                    : "Mark Tough"}
+                </button>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Contextual first-run coachmarks */}
+      {activeCoachMark === "home" && (
+        <CoachMarkSpotlight
+          target="[data-coach='home-alphabet']"
+          title="Pick a letter to start"
+          body="Tap any letter to browse vocabulary flashcards. Your progress is tracked per letter green means you've mastered them all."
+          placement="bottom"
+          onDismiss={() => dismissCoachMark("home")}
+        />
+      )}
+      {activeCoachMark === "mastered-tab" && (
+        <CoachMarkSpotlight
+          target="[data-coach-nav='Mastered']"
+          title="Mastered words live here"
+          body="Every word you mark with ✓ is saved in the Mastered tab so you can review them anytime."
+          placement="top"
+          onDismiss={() => dismissCoachMark("mastered-tab")}
+        />
+      )}
+      {activeCoachMark === "tough-tab" && (
+        <CoachMarkSpotlight
+          target="[data-coach-nav='Tough Nut']"
+          title="Drill your Tough Nuts"
+          body="Words you flag as Tough Nut go to this tab perfect for words you want to revisit and drill."
+          placement="top"
+          icon={<Brain className="w-5 h-5" />}
+          onDismiss={() => dismissCoachMark("tough-tab")}
+        />
       )}
     </div>
   );

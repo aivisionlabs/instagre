@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        // Precache the full app shell. Because WordCrack is client-only with
+        // Precache the full app shell. Because InstaGRE is client-only with
         // all data in the bundle, this gives complete offline support.
         workbox: {
           globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
@@ -36,8 +36,8 @@ export default defineConfig(() => {
         },
         includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
         manifest: {
-          name: 'WordCrack — Master every GRE word',
-          short_name: 'WordCrack',
+          name: 'InstaGRE — Master every GRE word',
+          short_name: 'InstaGRE',
           description: 'Master every GRE word. One swipe at a time.',
           id: '/',
           start_url: '/',

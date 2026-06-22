@@ -1,4 +1,14 @@
-export type WordStatus = 'Unseen' | 'Learned It' | 'Tough Nut';
+export type WordStatus = 'Unseen' | 'Mastered' | 'Tough Nut';
+
+/**
+ * The two independent learning flags for a word. They are NOT mutually
+ * exclusive: a word can be both "Mastered" and a "Tough Nut" at the same
+ * time. `toggleFlags` on the App carries a partial of this shape.
+ */
+export interface WordFlags {
+  mastered: boolean;
+  toughNut: boolean;
+}
 
 /**
  * A local user account. Keyed by `mobile` so that, once a backend exists, the
@@ -25,7 +35,9 @@ export interface Word {
   antonyms: string[];
   etymology: string;
   audioUrl?: string; // Optional audio URL
-  status: WordStatus;
+  // Independent flags — a word can be both mastered AND a tough nut.
+  mastered: boolean;
+  toughNut: boolean;
 }
 
 export type QuizType = 'multiple-choice' | 'flashcard-recall' | 'fill-in-blank';

@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Word, WordStatus, QuizQuestion, TestHistory } from '../types';
+import { Word, WordFlags, QuizQuestion, TestHistory } from '../types';
 import { Award, Play, Volume2, HelpCircle, Check, X, ShieldAlert, Zap, History, RotateCcw, AlertTriangle, BookOpen } from 'lucide-react';
 import { speakWord } from '../utils/speech';
 
 interface TestsViewProps {
   words: Word[];
-  onUpdateStatus: (wordId: string, newStatus: WordStatus) => void;
+  onSetFlags: (wordId: string, flags: Partial<WordFlags>) => void;
   initialSelectedMode?: string | null; // e.g. "Tough Nut Drill" or "By Letter: A"
 }
 
-export default function TestsView({ 
-  words, 
-  onUpdateStatus, 
-  initialSelectedMode = null 
+export default function TestsView({
+  words,
+  onSetFlags,
+  initialSelectedMode = null
 }: TestsViewProps) {
   const [activeScreen, setActiveScreen] = useState<'lobby' | 'quiz' | 'results'>('lobby');
   const [selectedLetter, setSelectedLetter] = useState<string>('A');
@@ -32,7 +32,7 @@ export default function TestsView({
 
   // Load history on mount
   useEffect(() => {
-    const cached = localStorage.getItem('wordcrack_test_history');
+    const cached = localStorage.getItem('instagre_test_history');
     if (cached) {
       try {
         setHistoryList(JSON.parse(cached));
@@ -64,11 +64,11 @@ export default function TestsView({
     let titleStr = '';
 
     if (mode === 'Tough') {
-      sourceWords = words.filter(w => w.status === 'Tough Nut');
+      sourceWords = words.filter(w => w.toughNut);
       titleStr = 'Tough Nut Drill';
     } else if (mode === 'Full') {
       // test on all words that started to be learned
-      sourceWords = words.filter(w => w.status === 'Learned It');
+      sourceWords = words.filter(w => w.mastered);
       titleStr = 'Comprehensive Full Test';
       if (sourceWords.length === 0) {
         sourceWords = words; // fallback
@@ -215,7 +215,7 @@ export default function TestsView({
 
       const updatedHistory = [record, ...historyList].slice(0, 30); // limit to 30 histories
       setHistoryList(updatedHistory);
-      localStorage.setItem('wordcrack_test_history', JSON.stringify(updatedHistory));
+      localStorage.setItem('instagre_test_history', JSON.stringify(updatedHistory));
 
       setActiveScreen('results');
     }
@@ -223,13 +223,13 @@ export default function TestsView({
 
   // One-tap force status to Tough Nut
   const markIncorrectAsTough = (wordId: string) => {
-    onUpdateStatus(wordId, 'Tough Nut');
+    onSetFlags(wordId, { toughNut: true });
   };
 
   const clearHistoryLog = () => {
     if (confirm('Are you sure you want to clear your test history?')) {
       setHistoryList([]);
-      localStorage.removeItem('wordcrack_test_history');
+      localStorage.removeItem('instagre_test_history');
     }
   };
 
@@ -639,14 +639,14 @@ export default function TestsView({
                     <button
                       type="button"
                       onClick={() => markIncorrectAsTough(word.id)}
-                      disabled={word.status === 'Tough Nut'}
+                      disabled={word.toughNut}
                       className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg uppercase tracking-wider cursor-pointer flex-shrink-0 flex items-center gap-1 text-center ${
-                        word.status === 'Tough Nut'
+                        word.toughNut
                           ? 'bg-amber-100 text-warning-vibrant border border-warning-vibrant/20 cursor-default'
                           : 'bg-warning-vibrant text-white hover:bg-[#b45309]'
                       }`}
                     >
-                      <span>{word.status === 'Tough Nut' ? 'Added 🥜' : 'Flag Tough'}</span>
+                      <span>{word.toughNut ? 'Added 🥜' : 'Flag Tough'}</span>
                     </button>
                   </div>
                 ))}

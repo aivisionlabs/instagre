@@ -1,6 +1,6 @@
-# WordCrack Design System Guidelines
+# InstaGRE Design System Guidelines
 
-This document outlines the core principles and standards for the WordCrack application, combining universal design best practices with the specific "Academic Immersive" visual language.
+This document outlines the core principles and standards for the InstaGRE application, combining universal design best practices with the specific "Academic Immersive" visual language.
 
 ## 1. Design Principles
 *   **Academic Immersion:** Prioritize focus and scholarship through elegant typography and minimal distractions.
@@ -40,7 +40,7 @@ This document outlines the core principles and standards for the WordCrack appli
 *   **Navigation:** Vertical swipe to cycle through word cards.
 
 ### Header Navigation
-*   **Branding:** "WordCrack" text in the top left.
+*   **Branding:** "InstaGRE" text in the top left.
 *   **Progress:** Integrated linear progress bar showing current letter mastery.
 *   **Letter Selector:** A-Z button in the top right that triggers a blurred grid overlay.
 

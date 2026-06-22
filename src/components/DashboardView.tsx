@@ -1,3 +1,4 @@
+import { type ReactNode } from 'react';
 import { Word } from '../types';
 import { Award, Zap, ChevronRight, Lock, Check } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -5,15 +6,16 @@ import { motion } from 'motion/react';
 interface DashboardViewProps {
   words: Word[];
   streak: number;
+  continueLetter: string | null;
   onLetterSelect: (letter: string) => void;
 }
 
-export default function DashboardView({ words, streak, onLetterSelect }: DashboardViewProps) {
+export default function DashboardView({ words, streak, continueLetter, onLetterSelect }: DashboardViewProps) {
   // Compute overall stats
   const totalWords = words.length;
-  const learnedCount = words.filter(w => w.status === 'Learned It').length;
-  const remainingCount = totalWords - learnedCount;
-  const overallPercentage = totalWords > 0 ? Math.round((learnedCount / totalWords) * 100) : 0;
+  const masteredCount = words.filter(w => w.mastered).length;
+  const remainingCount = totalWords - masteredCount;
+  const overallPercentage = totalWords > 0 ? Math.round((masteredCount / totalWords) * 100) : 0;
 
   // Let's build alphabet listing. We display A to H physically as detailed in the dashboard.
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
@@ -22,11 +24,65 @@ export default function DashboardView({ words, streak, onLetterSelect }: Dashboa
   const getLetterStats = (letter: string) => {
     const letterWords = words.filter(w => w.word.toUpperCase().startsWith(letter));
     const total = letterWords.length;
-    if (total === 0) return { total: 0, learned: 0, percentage: 0 };
+    if (total === 0) return { total: 0, mastered: 0, percentage: 0 };
     
-    const learned = letterWords.filter(w => w.status === 'Learned It').length;
-    const percentage = Math.round((learned / total) * 100);
-    return { total, learned, percentage };
+    const mastered = letterWords.filter(w => w.mastered).length;
+    const percentage = Math.round((mastered / total) * 100);
+    return { total, mastered, percentage };
+  };
+
+  const renderProgressRing = (percentage: number) => {
+    const circumference = 2 * Math.PI * 13;
+    const offset = circumference - (percentage / 100) * circumference;
+    let progressColor = 'text-primary';
+    let bgRingColor = 'text-gray-200';
+    if (percentage > 50) {
+      progressColor = 'text-primary';
+    } else if (percentage > 0) {
+      progressColor = 'text-warning-vibrant';
+      bgRingColor = 'text-[#fff3e0]';
+    }
+
+    return (
+      <div className="relative w-8 h-8 mt-1 flex items-center justify-center">
+        <svg className="w-full h-full transform -rotate-90">
+          <circle
+            cx="16" cy="16" r="13"
+            className={bgRingColor}
+            stroke="currentColor"
+            strokeWidth="2.5"
+            fill="transparent"
+          />
+          <circle
+            cx="16" cy="16" r="13"
+            className={progressColor}
+            stroke="currentColor"
+            strokeWidth="2.5"
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="absolute text-[8px] font-extrabold text-gray-700 select-none">
+          {percentage}%
+        </span>
+      </div>
+    );
+  };
+
+  const renderTileFooter = (percentage: number, isContinue: boolean, fallback: ReactNode) => {
+    if (isContinue) {
+      return (
+        <>
+          {renderProgressRing(percentage)}
+          <span className="mt-0.5 text-[7px] font-bold uppercase tracking-wide text-primary">
+            Continue
+          </span>
+        </>
+      );
+    }
+    return fallback;
   };
 
   return (
@@ -70,8 +126,8 @@ export default function DashboardView({ words, streak, onLetterSelect }: Dashboa
           {/* Specific counts details */}
           <div className="grid grid-cols-2 gap-4 pt-1">
             <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-xs">
-              <p className="text-[#b3cdff] text-[11px] font-bold tracking-wider uppercase">LEARNED</p>
-              <p className="text-[22px] font-serif font-bold leading-tight mt-1">{learnedCount}</p>
+              <p className="text-[#b3cdff] text-[11px] font-bold tracking-wider uppercase">MASTERED</p>
+              <p className="text-[22px] font-serif font-bold leading-tight mt-1">{masteredCount}</p>
             </div>
             <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-xs">
               <p className="text-[#b3cdff] text-[11px] font-bold tracking-wider uppercase">REMAINING</p>
@@ -82,7 +138,7 @@ export default function DashboardView({ words, streak, onLetterSelect }: Dashboa
       </section>
 
       {/* Alphabet Grid Card */}
-      <section className="space-y-4" id="alphabet_section">
+      <section className="space-y-4" id="alphabet_section" data-coach="home-alphabet">
         <div className="flex items-center justify-between">
           <h3 className="font-serif text-xl font-bold text-primary">Alphabet Mastery</h3>
           <button 
@@ -99,6 +155,7 @@ export default function DashboardView({ words, streak, onLetterSelect }: Dashboa
             const stats = getLetterStats(letter);
             const isUnused = stats.total === 0;
             const isMastered = stats.total > 0 && stats.percentage === 100;
+            const isContinue = continueLetter === letter;
             
             // Letters A-H are interactive, other letters can have a custom lock icon to represent progressive levels
             const isLetterLocked = !['A', 'B', 'C', 'D'].includes(letter) && isUnused;
@@ -124,62 +181,34 @@ export default function DashboardView({ words, streak, onLetterSelect }: Dashboa
                   key={letter}
                   type="button"
                   onClick={() => onLetterSelect(letter)}
-                  className="bg-success-soft hover:bg-[#cbf4da] text-success-vibrant border-b-3 border-[#16a34a]/30 rounded-2xl flex flex-col items-center justify-center aspect-square p-2 cursor-pointer transition-all hover:scale-[1.03] duration-150 shadow-xs"
+                  className={`bg-success-soft hover:bg-[#cbf4da] text-success-vibrant border-b-3 border-[#16a34a]/30 rounded-2xl flex flex-col items-center justify-center aspect-square p-2 cursor-pointer transition-all hover:scale-[1.03] duration-150 shadow-xs ${
+                    isContinue ? 'ring-2 ring-primary ring-offset-2' : ''
+                  }`}
                 >
                   <span className="font-serif text-2xl font-bold">{letter}</span>
-                  <div className="mt-1.5 text-success-vibrant flex gap-0.5 active:scale-90 duration-100">
-                    <Check className="w-5 h-5 stroke-[3px]" />
-                  </div>
+                  {renderTileFooter(
+                    stats.percentage,
+                    isContinue,
+                    <div className="mt-1.5 text-success-vibrant flex gap-0.5 active:scale-90 duration-100">
+                      <Check className="w-5 h-5 stroke-[3px]" />
+                    </div>,
+                  )}
                 </button>
               );
             }
 
             // Normal Progress Tile
-            const circumference = 2 * Math.PI * 13; // r = 13
-            const offset = stats.total > 0 ? circumference - (stats.percentage / 100) * circumference : circumference;
-
-            // Choose color scheme based on percentage
-            let progressColor = 'text-primary';
-            let bgRingColor = 'text-gray-200';
-            if (stats.percentage > 50) {
-              progressColor = 'text-primary';
-            } else if (stats.percentage > 0) {
-              progressColor = 'text-warning-vibrant';
-              bgRingColor = 'text-[#fff3e0]';
-            }
-
             return (
               <button
                 key={letter}
                 type="button"
                 onClick={() => onLetterSelect(letter)}
-                className="bg-white hover:bg-primary/[0.03] text-[#111827] border border-gray-200/80 border-b-3 border-gray-300 rounded-2xl flex flex-col items-center justify-center aspect-square p-2 cursor-pointer transition-all hover:scale-[1.03] duration-150 active:scale-95 shadow-xs"
+                className={`bg-white hover:bg-primary/[0.03] text-[#111827] border border-gray-200/80 border-b-3 border-gray-300 rounded-2xl flex flex-col items-center justify-center aspect-square p-2 cursor-pointer transition-all hover:scale-[1.03] duration-150 active:scale-95 shadow-xs ${
+                  isContinue ? 'ring-2 ring-primary ring-offset-2 border-primary/40' : ''
+                }`}
               >
                 <span className="font-serif text-2xl font-bold">{letter}</span>
-                <div className="relative w-8 h-8 mt-1 flex items-center justify-center">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle 
-                      cx="16" cy="16" r="13" 
-                      className={`${bgRingColor}`} 
-                      stroke="currentColor" 
-                      strokeWidth="2.5" 
-                      fill="transparent" 
-                    />
-                    <circle 
-                      cx="16" cy="16" r="13" 
-                      className={`${progressColor}`} 
-                      stroke="currentColor" 
-                      strokeWidth="2.5" 
-                      fill="transparent" 
-                      strokeDasharray={circumference}
-                      strokeDashoffset={offset}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span className="absolute text-[8px] font-extrabold text-gray-700 select-none">
-                    {stats.percentage}%
-                  </span>
-                </div>
+                {renderTileFooter(stats.percentage, isContinue, renderProgressRing(stats.percentage))}
               </button>
             );
           })}

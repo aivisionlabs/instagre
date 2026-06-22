@@ -1,10 +1,10 @@
 import { useState, FormEvent } from 'react';
 import { UserProfile } from '../types';
-import { normalizeMobile, profileExists } from '../data/auth';
+import { normalizeMobile } from '../data/auth';
 import { ArrowLeft, User, Calendar, Phone, ArrowRight, GraduationCap, Zap, BadgeCheck } from 'lucide-react';
 
 interface SignupViewProps {
-  onSignup: (profile: UserProfile) => void;
+  onSignup: (profile: UserProfile) => Promise<void>;
   onGoToSignIn: () => void;
   onBack: () => void;
 }
@@ -14,23 +14,28 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
   const [dob, setDob] = useState('');
   const [mobile, setMobile] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (!fullName.trim()) return setError('Please enter your full name.');
+    if (!dob) return setError('Please enter your date of birth.');
     if (normalizeMobile(mobile).length < 7) return setError('Please enter a valid mobile number.');
-    if (profileExists(mobile)) {
-      return setError('An account with this mobile already exists. Try signing in.');
-    }
 
-    onSignup({
-      fullName: fullName.trim(),
-      dob,
-      mobile: normalizeMobile(mobile),
-      createdAt: new Date().toISOString(),
-    });
+    setSubmitting(true);
+    try {
+      await onSignup({
+        fullName: fullName.trim(),
+        dob,
+        mobile: normalizeMobile(mobile),
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create your account.');
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -45,7 +50,7 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
         >
           <ArrowLeft className="w-6 h-6" />
         </button>
-        <span className="font-serif text-xl font-bold text-primary">WordCrack</span>
+        <span className="font-serif text-xl font-bold text-primary">InstaGRE</span>
       </header>
 
       <main className="flex-1 px-6 pt-4">
@@ -80,7 +85,7 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
           {/* DOB */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold tracking-wider uppercase text-text-primary">
-              Date of Birth
+              Date of Birth <span className="text-gray-400 normal-case font-medium tracking-normal">· used to sign in</span>
             </label>
             <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 h-12 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors">
               <Calendar className="w-4.5 h-4.5 text-gray-400 shrink-0" />
@@ -124,10 +129,11 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
 
           <button
             type="submit"
-            className="btn-3d w-full bg-primary hover:bg-primary-container text-white h-13 rounded-xl font-bold text-base flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            disabled={submitting}
+            className="btn-3d w-full bg-primary hover:bg-primary-container text-white h-13 rounded-xl font-bold text-base flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span>Sign Up</span>
-            <ArrowRight className="w-5 h-5" />
+            <span>{submitting ? 'Creating account…' : 'Sign Up'}</span>
+            {!submitting && <ArrowRight className="w-5 h-5" />}
           </button>
 
           <p className="text-center text-sm text-text-secondary">
@@ -165,7 +171,7 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
           ))}
         </div>
         <p className="text-center text-[11px] text-gray-400 mt-8">
-          © 2024 WordCrack Education. Precision Vocabulary Prep.
+          © 2024 InstaGRE Education. Precision Vocabulary Prep.
         </p>
       </footer>
     </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Word, UserProfile } from '../types';
-import { User, Calendar, LogOut, Check, X } from 'lucide-react';
+import { User, LogOut, Check, X } from 'lucide-react';
 
 interface ProfileViewProps {
   profile: UserProfile;
@@ -37,18 +37,16 @@ export default function ProfileView({
 }: ProfileViewProps) {
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile.fullName);
-  const [dob, setDob] = useState(profile.dob);
 
-  const wordsMastered = words.filter((w) => w.status === 'Learned It').length;
+  const wordsMastered = words.filter((w) => w.mastered).length;
 
   const handleSave = () => {
-    onUpdateProfile({ ...profile, fullName: fullName.trim() || profile.fullName, dob });
+    onUpdateProfile({ ...profile, fullName: fullName.trim() || profile.fullName });
     setEditing(false);
   };
 
   const handleCancel = () => {
     setFullName(profile.fullName);
-    setDob(profile.dob);
     setEditing(false);
   };
 
@@ -82,19 +80,11 @@ export default function ProfileView({
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div>
               <label className="text-[11px] font-bold tracking-wider uppercase text-text-secondary">
                 Date of Birth
               </label>
-              <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 h-11 focus-within:border-primary transition-colors">
-                <Calendar className="w-4 h-4 text-gray-400 shrink-0" />
-                <input
-                  type="date"
-                  value={dob}
-                  onChange={(e) => setDob(e.target.value)}
-                  className="bg-transparent w-full outline-none text-sm text-text-primary"
-                />
-              </div>
+              <p className="text-sm text-gray-400 mt-1">{formatDob(profile.dob)} (locked · used to sign in)</p>
             </div>
 
             <div>
