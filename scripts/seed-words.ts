@@ -27,7 +27,8 @@ if (!url || !serviceKey) {
 
 const supabase = createClient(url, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
-  realtime: { transport: ws },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  realtime: { transport: ws as any },
 });
 
 const rows = initialWords.map((w, i) => ({

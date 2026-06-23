@@ -29,6 +29,7 @@ const env = `# Local Supabase (Docker). Run \`npm run supabase:start\` first.
 # Studio: ${status.STUDIO_URL ?? 'http://127.0.0.1:54323'}
 VITE_SUPABASE_URL=${url}
 VITE_SUPABASE_ANON_KEY=${key}
+INSTAGRE_JWT_SECRET=local-dev-jwt-secret-change-me
 `;
 
 writeFileSync(join(root, '.env'), env);

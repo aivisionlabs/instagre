@@ -4,7 +4,6 @@ import { loadWordsCached, pullWords } from "./data/version";
 import {
   getSession,
   onAuthStateChange,
-  fetchProfile,
   signUpWithMobileDob,
   signInWithMobileDob,
   signOut,
@@ -12,6 +11,7 @@ import {
   touchStreak,
 } from "./data/auth";
 import { setProgressFlags, initSync, teardownSync } from "./data/sync";
+import { logger } from "./utils/logger";
 import {
   getContinueState,
   resolveContinueTarget,
@@ -51,24 +51,21 @@ import { speakWord } from "./utils/speech";
 type AppView = "loading" | "splash" | "signup" | "signin" | "app";
 type Tab = "Home" | "Browse" | "Mastered" | "Tough Nut" | "Profile";
 
-/** Map a raw Supabase/auth error to a friendly, user-facing message. */
+type AuthErrorLike = { message?: string };
+
+/** Map an auth error to a friendly, user-facing message. */
 function authErrorMessage(e: unknown, ctx: "signup" | "signin"): string {
-  const msg =
-    (e as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
+  const msg = (e as AuthErrorLike | null)?.message ?? "";
+  const lower = msg.toLowerCase();
   if (
-    msg.includes("already") ||
-    msg.includes("registered") ||
-    msg.includes("exists")
-  )
-    return "An account with this mobile number already exists. Please sign in.";
-  if (msg.includes("invalid") || msg.includes("credential"))
-    return "Invalid mobile number or date of birth.";
-  if (
-    msg.includes("fetch") ||
-    msg.includes("network") ||
-    msg.includes("offline")
-  )
+    lower.includes("fetch") ||
+    lower.includes("network") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("offline")
+  ) {
     return "You appear to be offline. Connect to the internet to continue.";
+  }
+  if (msg) return msg;
   return ctx === "signup"
     ? "Could not create your account. Please try again."
     : "Could not sign you in. Please try again.";
@@ -109,19 +106,26 @@ export default function App() {
    * we're restoring offline and fall back to the cached profile).
    */
   const enterApp = async (uid: string, p: UserProfile | null) => {
+    logger.info("app:boot", "entering app", { userId: uid });
+
     const cacheKey = `instagre_profile_${uid}`;
     let prof = p;
     if (!prof) {
       try {
         const raw = localStorage.getItem(cacheKey);
-        if (raw) prof = JSON.parse(raw) as UserProfile;
+        if (raw) {
+          prof = JSON.parse(raw) as UserProfile;
+          logger.debug("app:boot", "restored cached profile");
+        }
       } catch {
-        /* ignore corrupt cache */
+        logger.warn("app:boot", "corrupt cached profile");
       }
     }
     if (prof) localStorage.setItem(cacheKey, JSON.stringify(prof));
 
     const cachedWords = loadWordsCached(uid);
+    logger.debug("app:boot", "loaded cached words", { count: cachedWords.length });
+
     const initialContinue = resolveContinueTarget(
       cachedWords,
       getContinueState(uid),
@@ -137,39 +141,52 @@ export default function App() {
     setView("app");
     initSync(uid);
 
-    // Background refresh (non-blocking).
-    void touchStreak(uid)
-      .then(setStreak)
-      .catch(() => {});
+    logger.info("app:boot", "app shell rendered", { userId: uid });
+
+    setStreak(touchStreak(uid));
     void pullWords(uid)
-      .then(setWords)
-      .catch(() => {});
+      .then((freshWords) => {
+        logger.info("app:boot", "refreshed words from server", {
+          userId: uid,
+          count: freshWords.length,
+        });
+        setWords(freshWords);
+      })
+      .catch((e) => {
+        logger.warn("app:boot", "failed to refresh words from server", {
+          userId: uid,
+          error: (e as Error).message,
+        });
+      });
   };
 
-  // Boot: restore a Supabase session if one exists, else show splash/signup.
+  // Boot: restore local session if one exists, else show splash/signup.
   useEffect(() => {
-    let unsub = () => {};
-    (async () => {
-      const session = await getSession();
-      if (session) {
-        const uid = session.user.id;
-        const p = await fetchProfile(uid);
-        await enterApp(uid, p);
-      } else {
-        const started = localStorage.getItem("instagre_has_started") === "true";
-        setView(started ? "signup" : "splash");
-      }
-      // React to sign-out (including from another tab) + token changes.
-      unsub = onAuthStateChange((s) => {
-        if (!s) {
-          teardownSync();
-          setUserId(null);
-          setProfile(null);
-          setWords([]);
-          setView("signin");
-        }
+    logger.info("app:boot", "app booting up");
+
+    const session = getSession();
+    if (session) {
+      logger.info("app:boot", "found existing session, entering app");
+      void enterApp(session.userId, session.profile);
+    } else {
+      const started = localStorage.getItem("instagre_has_started") === "true";
+      const nextView = started ? "signup" : "splash";
+      logger.info("app:boot", "no session found, showing initial view", {
+        view: nextView,
       });
-    })();
+      setView(nextView);
+    }
+
+    const unsub = onAuthStateChange((s) => {
+      if (!s) {
+        logger.info("app:auth", "session cleared in another tab, signing out");
+        teardownSync();
+        setUserId(null);
+        setProfile(null);
+        setWords([]);
+        setView("signin");
+      }
+    });
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -203,41 +220,72 @@ export default function App() {
   // Async auth handlers — they throw friendly errors that the views display.
   const handleSignup = async (p: UserProfile) => {
     try {
+      logger.info("app:handler", "signup handler called");
       const { userId: uid, profile: prof } = await signUpWithMobileDob(p);
+      logger.info("app:handler", "signup auth succeeded, entering app");
       await enterApp(uid, prof);
     } catch (e) {
-      throw new Error(authErrorMessage(e, "signup"));
+      const errorMsg = authErrorMessage(e, "signup");
+      logger.error("app:handler", "signup handler error", {
+        error: (e as Error).message,
+        userMessage: errorMsg,
+      });
+      throw new Error(errorMsg);
     }
   };
 
   const handleSignIn = async (mobile: string, dob: string) => {
     try {
+      logger.info("app:handler", "signin handler called");
       const { userId: uid, profile: prof } = await signInWithMobileDob(
         mobile,
         dob,
       );
+      logger.info("app:handler", "signin auth succeeded, entering app");
       await enterApp(uid, prof);
     } catch (e) {
-      throw new Error(authErrorMessage(e, "signin"));
+      const errorMsg = authErrorMessage(e, "signin");
+      logger.error("app:handler", "signin handler error", {
+        error: (e as Error).message,
+        userMessage: errorMsg,
+      });
+      throw new Error(errorMsg);
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    logger.info("app:handler", "logout handler called", { userId });
     teardownSync();
-    await signOut();
+    signOut();
     setUserId(null);
     setProfile(null);
     setWords([]);
     setView("signin");
+    logger.info("app:handler", "logout completed");
   };
 
   const handleUpdateProfile = (updated: UserProfile) => {
-    if (!userId) return;
-    setProfile(updated); // optimistic
-    localStorage.setItem(`instagre_profile_${userId}`, JSON.stringify(updated));
-    void updateProfile(userId, updated).catch((e) => {
-      console.warn("[profile] update failed:", e?.message ?? e);
+    if (!userId) {
+      logger.warn("app:handler", "update profile called without userId");
+      return;
+    }
+    logger.info("app:handler", "profile update initiated", {
+      userId,
+      fullName: updated.fullName,
     });
+    setProfile(updated);
+    localStorage.setItem(`instagre_profile_${userId}`, JSON.stringify(updated));
+    void updateProfile(userId, updated)
+      .then((newProf) => {
+        setProfile(newProf);
+        logger.info("app:handler", "profile updated successfully", { userId });
+      })
+      .catch((e) => {
+        logger.error("app:handler", "profile update failed", {
+          userId,
+          error: (e as Error)?.message ?? e,
+        });
+      });
   };
 
   // Toggle one or both learning flags for a word (they're independent).

@@ -331,7 +331,6 @@ export function CoachMarkTour({ steps, onComplete }: CoachMarkTourProps) {
 
   return (
     <CoachMarkSpotlight
-      key={index}
       target={step.target}
       title={step.title}
       body={step.body}

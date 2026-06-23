@@ -1,16 +1,9 @@
 import { UserProfile } from '../types';
-import { supabase, synthEmail } from '../lib/supabase';
-import type { Session } from '@supabase/supabase-js';
+import { logger } from '../utils/logger';
 
 /**
- * Auth + profile + streak seam, now backed by Supabase.
- *
- * Identity is still anchored on the user's **mobile number**: it's turned into a
- * synthetic auth email (`<digits>@phone.instagre.app`) with the **DOB as the
- * password**. This keeps the mobile+DOB UX while giving us a real `auth.uid()`
- * for Row Level Security. The seam is async now; the streak day-math is
- * preserved from the old localStorage implementation, with localStorage kept as
- * an offline cache.
+ * Auth via Supabase Edge Functions. Mobile is the account key; DOB is the password.
+ * Session token is a signed JWT returned by auth-signup / auth-login.
  */
 
 /** Strip everything but digits so `+1 (555) 000-0000` and `15550000000` match. */
@@ -18,100 +11,228 @@ export function normalizeMobile(mobile: string): string {
   return mobile.replace(/\D/g, '');
 }
 
-interface ProfileRow {
-  id: string;
-  full_name: string;
-  dob: string; // 'yyyy-mm-dd'
-  mobile: string;
-  created_at: string;
+const SESSION_KEY = 'instagre_session';
+
+interface SessionData {
+  token: string;
+  userId: string;
+  profile: UserProfile;
 }
-
-function rowToProfile(r: ProfileRow): UserProfile {
-  return {
-    fullName: r.full_name,
-    dob: r.dob,
-    mobile: r.mobile,
-    createdAt: r.created_at,
-  };
-}
-
-/* ----------------------------------------------------------------- session */
-
-export async function getSession(): Promise<Session | null> {
-  const { data } = await supabase.auth.getSession();
-  return data.session;
-}
-
-export function onAuthStateChange(cb: (session: Session | null) => void) {
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => cb(session));
-  return () => data.subscription.unsubscribe();
-}
-
-export async function fetchProfile(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-  if (error || !data) return null;
-  return rowToProfile(data as ProfileRow);
-}
-
-/* ----------------------------------------------------------------- auth */
 
 export interface AuthResult {
   userId: string;
   profile: UserProfile;
 }
 
-export async function signUpWithMobileDob(input: UserProfile): Promise<AuthResult> {
-  const mobile = normalizeMobile(input.mobile);
-  const { data, error } = await supabase.auth.signUp({
-    email: synthEmail(mobile),
-    password: input.dob,
-    options: { data: { full_name: input.fullName, mobile, dob: input.dob } },
-  });
-  if (error) throw error;
-  const user = data.user;
-  if (!user) throw new Error('Signup did not return a user (email confirmation may be on).');
+interface AuthApiResponse {
+  token: string;
+  userId: string;
+  profile: UserProfile;
+  error?: string;
+}
 
-  const profile: UserProfile = {
-    fullName: input.fullName,
-    dob: input.dob,
-    mobile,
-    createdAt: user.created_at ?? new Date().toISOString(),
+function apiUrl(functionName: string): string {
+  const base = import.meta.env.VITE_SUPABASE_URL;
+  if (!base) throw new Error('VITE_SUPABASE_URL is not configured.');
+  return `${base}/functions/v1/${functionName}`;
+}
+
+function apiHeaders(token?: string): Record<string, string> {
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (!anonKey) throw new Error('VITE_SUPABASE_ANON_KEY is not configured.');
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    apikey: anonKey,
+    Authorization: `Bearer ${anonKey}`,
   };
-  return { userId: user.id, profile };
+  if (token) headers['X-Instagre-Token'] = token;
+  return headers;
+}
+
+async function callAuthFunction(
+  functionName: string,
+  body: Record<string, string>,
+  token?: string,
+): Promise<AuthApiResponse> {
+  logger.debug('auth:api', `calling ${functionName}`, { hasToken: !!token });
+
+  try {
+    const res = await fetch(apiUrl(functionName), {
+      method: 'POST',
+      headers: apiHeaders(token),
+      body: JSON.stringify(body),
+    });
+
+    const data = (await res.json()) as AuthApiResponse;
+    if (!res.ok) {
+      logger.error('auth:api', `${functionName} failed`, { status: res.status, error: data.error });
+      throw new Error(data.error ?? 'Request failed. Please try again.');
+    }
+
+    logger.info('auth:api', `${functionName} succeeded`, { userId: data.userId });
+    return data;
+  } catch (e) {
+    logger.error('auth:api', `${functionName} error`, { error: (e as Error).message });
+    throw e;
+  }
+}
+
+function readSessionData(): SessionData | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const session = JSON.parse(raw) as SessionData;
+      logger.debug('auth:session', 'read session from storage', { userId: session.userId });
+      return session;
+    }
+    logger.debug('auth:session', 'no session in storage');
+    return null;
+  } catch (e) {
+    logger.warn('auth:session', 'corrupt session in storage', { error: (e as Error).message });
+    return null;
+  }
+}
+
+function writeSession(data: SessionData): void {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    logger.info('auth:session', 'wrote session to storage', { userId: data.userId });
+  } catch (e) {
+    logger.error('auth:session', 'failed to write session', { error: (e as Error).message });
+  }
+}
+
+function clearSession(): void {
+  try {
+    const hadSession = localStorage.getItem(SESSION_KEY) !== null;
+    localStorage.removeItem(SESSION_KEY);
+    if (hadSession) {
+      logger.info('auth:session', 'cleared session from storage');
+    }
+  } catch (e) {
+    logger.error('auth:session', 'failed to clear session', { error: (e as Error).message });
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1])) as { exp?: number };
+    return typeof payload.exp === 'number' && payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
+
+/** Restore the signed-in user from local session storage, if any. */
+export function getSession(): AuthResult | null {
+  const session = readSessionData();
+  if (!session) {
+    logger.debug('auth:session', 'no stored session available');
+    return null;
+  }
+
+  if (isTokenExpired(session.token)) {
+    logger.info('auth:session', 'stored session token expired, clearing');
+    clearSession();
+    return null;
+  }
+
+  logger.info('auth:session', 'restored session from storage', { userId: session.userId });
+  return { userId: session.userId, profile: session.profile };
+}
+
+/** Listen for sign-out in other tabs (session key cleared elsewhere). */
+export function onAuthStateChange(cb: (session: AuthResult | null) => void): () => void {
+  const handler = (e: StorageEvent) => {
+    if (e.key !== SESSION_KEY) return;
+    cb(getSession());
+  };
+  window.addEventListener('storage', handler);
+  return () => window.removeEventListener('storage', handler);
+}
+
+export async function signUpWithMobileDob(input: UserProfile): Promise<AuthResult> {
+  logger.info('auth:signup', 'signup started', { fullName: input.fullName });
+
+  const mobile = normalizeMobile(input.mobile);
+  logger.debug('auth:signup', 'normalized mobile', { mobileLast4: mobile.slice(-4) });
+
+  try {
+    const data = await callAuthFunction('auth-signup', {
+      fullName: input.fullName,
+      dob: input.dob,
+      mobile,
+    });
+
+    logger.info('auth:signup', 'auth-signup function succeeded', { userId: data.userId });
+
+    writeSession({
+      token: data.token,
+      userId: data.userId,
+      profile: data.profile,
+    });
+
+    logger.info('auth:signup', 'signup completed successfully', { userId: data.userId });
+    return { userId: data.userId, profile: data.profile };
+  } catch (e) {
+    logger.error('auth:signup', 'signup failed', { error: (e as Error).message });
+    throw e;
+  }
 }
 
 export async function signInWithMobileDob(mobile: string, dob: string): Promise<AuthResult> {
-  const norm = normalizeMobile(mobile);
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: synthEmail(norm),
-    password: dob,
-  });
-  if (error) throw error;
-  const user = data.user;
-  const profile =
-    (await fetchProfile(user.id)) ??
-    ({ fullName: '', dob, mobile: norm, createdAt: user.created_at ?? new Date().toISOString() } as UserProfile);
-  return { userId: user.id, profile };
+  logger.info('auth:signin', 'signin started');
+
+  const normalizedMobile = normalizeMobile(mobile);
+  logger.debug('auth:signin', 'normalized mobile', { mobileLast4: normalizedMobile.slice(-4) });
+
+  try {
+    const data = await callAuthFunction('auth-login', {
+      mobile: normalizedMobile,
+      dob,
+    });
+
+    logger.info('auth:signin', 'auth-login function succeeded', { userId: data.userId });
+
+    writeSession({
+      token: data.token,
+      userId: data.userId,
+      profile: data.profile,
+    });
+
+    logger.info('auth:signin', 'signin completed successfully', { userId: data.userId });
+    return { userId: data.userId, profile: data.profile };
+  } catch (e) {
+    logger.error('auth:signin', 'signin failed', { error: (e as Error).message });
+    throw e;
+  }
 }
 
-export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
+export function signOut(): void {
+  logger.info('auth:signout', 'signout initiated');
+  clearSession();
+  logger.info('auth:signout', 'signout completed');
 }
 
-/** Update the editable profile fields (full name only — mobile + dob are locked). */
 export async function updateProfile(userId: string, updated: UserProfile): Promise<UserProfile> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ full_name: updated.fullName })
-    .eq('id', userId)
-    .select()
-    .single();
-  if (error) throw error;
-  return rowToProfile(data as ProfileRow);
+  const session = readSessionData();
+  if (!session || session.userId !== userId) {
+    throw new Error('Not signed in.');
+  }
+
+  const res = await fetch(apiUrl('auth-update-profile'), {
+    method: 'POST',
+    headers: apiHeaders(session.token),
+    body: JSON.stringify({ fullName: updated.fullName }),
+  });
+  const data = (await res.json()) as { profile?: UserProfile; error?: string };
+  if (!res.ok || !data.profile) {
+    throw new Error(data.error ?? 'Could not update your profile.');
+  }
+
+  writeSession({ ...session, profile: data.profile });
+  return data.profile;
 }
 
 /* --------------------------------------------------------------- streak */
@@ -135,32 +256,10 @@ function readStreakCache(userId: string): StreakRecord | null {
   }
 }
 
-/**
- * Record a visit for the day and return the running streak. Same day = no
- * change; consecutive day = +1; any gap = reset to 1. Reconciles against the
- * remote row when online (takes the more advanced record), and works fully
- * offline from the local cache. Best-effort upserts the result back.
- */
-export async function touchStreak(userId: string): Promise<number> {
+/** Record a visit for the day and return the running streak (local only for now). */
+export function touchStreak(userId: string): number {
   const today = todayStr();
-  let rec = readStreakCache(userId);
-
-  // Reconcile with remote (best-effort; ignored when offline).
-  try {
-    const { data } = await supabase
-      .from('streaks')
-      .select('count, last_active')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (data && data.last_active) {
-      const remote: StreakRecord = { count: data.count, lastActive: data.last_active };
-      if (!rec || remote.lastActive > rec.lastActive || remote.count > rec.count) {
-        rec = remote;
-      }
-    }
-  } catch {
-    /* offline — fall back to local cache */
-  }
+  const rec = readStreakCache(userId);
 
   let next: StreakRecord;
   if (!rec) next = { count: 1, lastActive: today };
@@ -169,13 +268,5 @@ export async function touchStreak(userId: string): Promise<number> {
   else next = { count: 1, lastActive: today };
 
   localStorage.setItem(streakKey(userId), JSON.stringify(next));
-  // Best-effort remote upsert (don't block the UI on it).
-  void supabase
-    .from('streaks')
-    .upsert({ user_id: userId, count: next.count, last_active: next.lastActive })
-    .then(({ error }) => {
-      if (error) console.warn('[streak] upsert failed:', error.message);
-    });
-
   return next.count;
 }

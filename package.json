@@ -17,6 +17,8 @@
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",
     "supabase:reset": "supabase db reset",
+    "functions:serve": "supabase functions serve auth-signup auth-login auth-update-profile",
+    "functions:deploy": "supabase functions deploy auth-signup auth-login auth-update-profile",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

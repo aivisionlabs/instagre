@@ -4,19 +4,17 @@ import { supabase } from '../lib/supabase';
 import {
   ProgressMap,
   readProgressCache,
-  writeProgressCache,
   applyPendingToProgress,
 } from './sync';
 
 /**
- * Words are split into two halves, matching the DB:
+ * Words are split into two halves:
  *  - CONTENT (definition, examples, …) lives in the global `words` table and is
- *    cached locally under one key (it's the same for every user).
- *  - PROGRESS (mastered / toughNut) is per-user and lives in sync.ts's cache.
+ *    cached locally under one key (same for every user).
+ *  - PROGRESS (mastered / toughNut) is per-user and lives in localStorage only.
  *
- * The app is offline-first: `loadWordsCached` returns instantly from cache (or
- * the bundled seed on first run), and `pullWords` refreshes from Supabase in
- * the background, merging remote + local progress by last-write-wins.
+ * Offline-first: `loadWordsCached` returns instantly from cache (or bundled seed),
+ * and `pullWords` refreshes word content from Supabase in the background.
  */
 
 export const CONTENT_KEY = 'instagre_words_content';
@@ -89,50 +87,24 @@ function merge(content: WordContent[], progress: ProgressMap): Word[] {
  */
 export function loadWordsCached(userId: string): Word[] {
   const content = readContentCache() ?? seedContent();
-  return merge(content, readProgressCache(userId));
+  const progress = applyPendingToProgress(userId, readProgressCache(userId));
+  return merge(content, progress);
 }
 
 /**
- * Refresh from Supabase: pull global content + this user's progress, reconcile
- * against the local cache (LWW by updated_at) and any still-pending ops, then
- * re-cache and return the merged Word list. Throws on network/auth errors so
- * the caller can keep showing cached data.
+ * Refresh word content from Supabase, re-cache, and merge with local progress.
+ * Throws on network errors so the caller can keep showing cached data.
  */
 export async function pullWords(userId: string): Promise<Word[]> {
-  const [wordsRes, progressRes] = await Promise.all([
-    supabase.from('words').select('*').order('sort_order'),
-    supabase.from('word_progress').select('*').eq('user_id', userId),
-  ]);
-  if (wordsRes.error) throw wordsRes.error;
-  if (progressRes.error) throw progressRes.error;
+  const { data, error } = await supabase.from('words').select('*').order('sort_order');
+  if (error) throw error;
 
   const content =
-    wordsRes.data && wordsRes.data.length
-      ? (wordsRes.data as WordRow[]).map(rowToContent)
+    data && data.length
+      ? (data as WordRow[]).map(rowToContent)
       : readContentCache() ?? seedContent();
-  if (wordsRes.data && wordsRes.data.length) writeContentCache(content);
+  if (data && data.length) writeContentCache(content);
 
-  // remote progress -> map
-  const remote: ProgressMap = {};
-  for (const r of progressRes.data ?? []) {
-    remote[r.word_id] = {
-      mastered: r.mastered ?? r.learned ?? false,
-      toughNut: r.tough_nut,
-      updated_at: r.updated_at,
-    };
-  }
-
-  // overlay local entries that are newer than remote (un-acknowledged edits)
-  const merged: ProgressMap = { ...remote };
-  const local = readProgressCache(userId);
-  for (const [wordId, lp] of Object.entries(local)) {
-    const rp = remote[wordId];
-    if (!rp || lp.updated_at > rp.updated_at) merged[wordId] = lp;
-  }
-
-  // pending queue ops are the freshest — always win
-  applyPendingToProgress(userId, merged);
-
-  writeProgressCache(userId, merged);
-  return merge(content, merged);
+  const progress = applyPendingToProgress(userId, readProgressCache(userId));
+  return merge(content, progress);
 }

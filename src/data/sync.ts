@@ -1,18 +1,11 @@
 import { WordFlags } from '../types';
-import { supabase } from '../lib/supabase';
 
 /**
- * Offline-first sync engine for per-word progress.
+ * Offline-first sync engine for per-word progress (local only).
  *
- * - Mutations are written to a local **progress cache** (instant, optimistic)
- *   and a **pending-ops queue**, both in localStorage and keyed by user id.
- * - The queue is flushed to Supabase whenever we're online (on mutation, on
- *   reconnect, on tab focus, on an interval, and on boot).
- * - Conflict resolution is last-write-wins by `updated_at`; pending ops are by
- *   definition the freshest and always win until acknowledged.
- *
- * This module owns the progress cache + queue; version.ts owns word *content*
- * and reads the progress cache from here when assembling full Word objects.
+ * Mutations are written to a local progress cache and a pending-ops queue,
+ * both keyed by user id (normalized mobile). Remote Supabase sync is disabled
+ * while auth is local-first; the queue is kept so a future backend can drain it.
  */
 
 export interface ProgressEntry {
@@ -74,7 +67,7 @@ export function applyPendingToProgress(userId: string, map: ProgressMap): Progre
 
 /**
  * Optimistically record a word's flags: update the progress cache + enqueue a
- * pending op (coalesced by word id), then fire-and-forget a flush.
+ * pending op (coalesced by word id).
  */
 export function setProgressFlags(userId: string, wordId: string, flags: WordFlags): void {
   const entry: ProgressEntry = {
@@ -88,93 +81,18 @@ export function setProgressFlags(userId: string, wordId: string, flags: WordFlag
   writeProgressCache(userId, cache);
 
   const queue = readJSON<ProgressMap>(queueKey(userId), {});
-  queue[wordId] = entry; // coalesce: latest op per word wins
+  queue[wordId] = entry;
   localStorage.setItem(queueKey(userId), JSON.stringify(queue));
-
-  void flushQueue(userId);
-}
-
-/* --------------------------------------------------------------- flush */
-
-// Postgres error codes that mean "this op will never succeed" — drop it.
-const TERMINAL_CODES = new Set(['23503', '23514', '42501']); // FK, check, RLS
-
-let flushing = false;
-
-/** Push all queued ops to Supabase. Safe to call concurrently (guarded). */
-export async function flushQueue(userId: string): Promise<void> {
-  if (flushing) return;
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-
-  const queue = normalizeProgressMap(readJSON(queueKey(userId), {}));
-  const wordIds = Object.keys(queue);
-  if (wordIds.length === 0) return;
-
-  flushing = true;
-  try {
-    for (const wordId of wordIds) {
-      const entry = queue[wordId];
-      const { error } = await supabase.from('word_progress').upsert(
-        {
-          user_id: userId,
-          word_id: wordId,
-          mastered: entry.mastered,
-          tough_nut: entry.toughNut,
-          updated_at: entry.updated_at,
-        },
-        { onConflict: 'user_id,word_id' },
-      );
-
-      if (!error) {
-        delete queue[wordId];
-      } else if (error.code && TERMINAL_CODES.has(error.code)) {
-        console.warn(`[sync] dropping un-syncable op for ${wordId}: ${error.message}`);
-        delete queue[wordId];
-      } else {
-        // Likely offline / transient — stop and retry the rest later.
-        break;
-      }
-    }
-  } finally {
-    localStorage.setItem(queueKey(userId), JSON.stringify(queue));
-    flushing = false;
-  }
 }
 
 /* --------------------------------------------------------------- lifecycle */
 
-let currentUserId: string | null = null;
-let intervalId: ReturnType<typeof setInterval> | null = null;
+/** No-op placeholder — remote flush disabled until custom backend auth exists. */
+export async function flushQueue(_userId: string): Promise<void> {}
 
-const onOnline = () => {
-  if (currentUserId) void flushQueue(currentUserId);
-};
-const onVisible = () => {
-  if (currentUserId && document.visibilityState === 'visible') void flushQueue(currentUserId);
-};
+export function initSync(_userId: string): void {}
 
-/** Start background flushing for a user. Call after login / session restore. */
-export function initSync(userId: string): void {
-  teardownSync();
-  currentUserId = userId;
-  window.addEventListener('online', onOnline);
-  document.addEventListener('visibilitychange', onVisible);
-  intervalId = setInterval(() => {
-    if (currentUserId) void flushQueue(currentUserId);
-  }, 30_000);
-  void flushQueue(userId); // drain anything left from a previous session
-}
-
-/** Stop background flushing. Call on logout / unmount. */
-export function teardownSync(): void {
-  window.removeEventListener('online', onOnline);
-  document.removeEventListener('visibilitychange', onVisible);
-  if (intervalId !== null) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
-  currentUserId = null;
-}
+export function teardownSync(): void {}
 
 export function getSyncStatus(userId: string): { online: boolean; pending: number } {
   const online = typeof navigator === 'undefined' ? true : navigator.onLine;

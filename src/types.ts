@@ -11,10 +11,8 @@ export interface WordFlags {
 }
 
 /**
- * A local user account. Keyed by `mobile` so that, once a backend exists, the
- * local-first profile + progress can be merged into the server record for the
- * same phone number without an identity remap. All fields are user-supplied at
- * signup; nothing here is a secret (no password — local-only for now).
+ * A local user account. Keyed by `mobile` (normalized digits). Auth and progress
+ * are stored on-device; Supabase supplies shared word content only.
  */
 export interface UserProfile {
   fullName: string;

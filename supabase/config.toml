@@ -382,8 +382,17 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+[edge_runtime.secrets]
+INSTAGRE_JWT_SECRET = "env(INSTAGRE_JWT_SECRET)"
+
+[functions.auth-signup]
+verify_jwt = false
+
+[functions.auth-login]
+verify_jwt = false
+
+[functions.auth-update-profile]
+verify_jwt = false
 
 [analytics]
 enabled = true
