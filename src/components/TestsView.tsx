@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Word, WordFlags, QuizQuestion, TestHistory } from '../types';
-import { Award, Play, Volume2, HelpCircle, Check, X, ShieldAlert, Zap, History, RotateCcw, AlertTriangle, BookOpen } from 'lucide-react';
+import { Award, Play, Volume2, HelpCircle, Check, X, ShieldAlert, Zap, History, RotateCcw, AlertTriangle, BookOpen, Brain } from 'lucide-react';
 import { speakWord } from '../utils/speech';
 import { formatDefinitions, primaryDefinition } from '../utils/wordContent';
 
@@ -651,7 +651,15 @@ export default function TestsView({
                           : 'bg-warning-vibrant text-white hover:bg-[#b45309]'
                       }`}
                     >
-                      <span>{word.toughNut ? 'Added 🥜' : 'Flag Tough'}</span>
+                      <span className="inline-flex items-center gap-1">
+                        {word.toughNut ? (
+                          <>
+                            Added <Brain className="w-3 h-3" />
+                          </>
+                        ) : (
+                          'Flag Tough'
+                        )}
+                      </span>
                     </button>
                   </div>
                 ))}

@@ -149,7 +149,7 @@ interface CoachMarkSpotlightProps {
   /** CSS selector for the element to highlight */
   target: string;
   title: string;
-  body: string;
+  body: ReactNode;
   /** Where the tooltip sits relative to the highlight */
   placement?: "top" | "bottom";
   onDismiss: () => void;
@@ -312,7 +312,7 @@ export function CoachMarkSpotlight({
 export interface CoachMarkTourStep {
   target: string;
   title: string;
-  body: string;
+  body: ReactNode;
   placement?: "top" | "bottom";
 }
 

@@ -567,8 +567,8 @@ export default function App() {
                         </span>
                       )}
                       {word.toughNut && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-warning-soft text-warning-vibrant">
-                          Tough 🥜
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-warning-soft text-warning-vibrant inline-flex items-center gap-1">
+                          Tough <Brain className="w-3 h-3" />
                         </span>
                       )}
                       <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
@@ -709,8 +709,8 @@ export default function App() {
                   </span>
                 )}
                 {selectedWordForModal.toughNut && (
-                  <span className="text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider bg-warning-soft text-warning-vibrant">
-                    Tough Nut 🥜
+                  <span className="text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider bg-warning-soft text-warning-vibrant inline-flex items-center gap-1">
+                    Tough Nut <Brain className="w-3 h-3" />
                   </span>
                 )}
               </div>
@@ -786,15 +786,19 @@ export default function App() {
                     });
                     setSelectedWordForModal(next);
                   }}
-                  className={`p-2.5 rounded-xl border cursor-pointer ${
+                  className={`p-2.5 rounded-xl border cursor-pointer inline-flex items-center justify-center gap-1 ${
                     selectedWordForModal.toughNut
                       ? "bg-warning-soft border-warning-vibrant text-warning-vibrant"
                       : "bg-white border-gray-150 text-warning-vibrant hover:bg-warning-soft/20"
                   }`}
                 >
-                  {selectedWordForModal.toughNut
-                    ? "Tough Nut 🥜"
-                    : "Mark Tough"}
+                  {selectedWordForModal.toughNut ? (
+                    <>
+                      Tough Nut <Brain className="w-3.5 h-3.5" />
+                    </>
+                  ) : (
+                    "Mark Tough"
+                  )}
                 </button>
               </div>
             </div>

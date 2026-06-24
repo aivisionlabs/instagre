@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, type PointerEvent } from "react";
 import { Word, WordFlags } from "../types";
 import { speakWord } from "../utils/speech";
-import { Volume2, Check, ChevronUp, BookOpen, Smile } from "lucide-react";
+import {
+  Volume2,
+  CheckCircle,
+  ChevronUp,
+  BookOpen,
+  Smile,
+  Brain,
+} from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   CoachMarkSpotlight,
@@ -33,10 +40,7 @@ function highlightWord(sentence: string, target: string) {
   );
 }
 
-export default function ToughNutView({
-  words,
-  onSetFlags,
-}: ToughNutViewProps) {
+export default function ToughNutView({ words, onSetFlags }: ToughNutViewProps) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [swipeDir, setSwipeDir] = useState<"up" | "down">("up");
@@ -45,7 +49,11 @@ export default function ToughNutView({
 
   // Same back-face gesture disambiguation as BrowseView: tell a navigation
   // flick apart from a content scroll inside the flipped card.
-  const backGesture = useRef<{ y: number; scrollTop: number; time: number } | null>(null);
+  const backGesture = useRef<{
+    y: number;
+    scrollTop: number;
+    time: number;
+  } | null>(null);
   const suppressClick = useRef(false);
 
   const toughWords = words
@@ -142,15 +150,18 @@ export default function ToughNutView({
   };
 
   return (
-    <div id="tough_nut_tab" className="relative flex flex-col bg-white rounded-2xl border border-warning-vibrant/15 overflow-hidden h-[calc(100vh-9rem)]">
+    <div
+      id="tough_nut_tab"
+      className="relative flex flex-col bg-white rounded-2xl border border-warning-vibrant/15 overflow-hidden h-[calc(100vh-9rem)]"
+    >
       {/* ------------------------------------------------- Card stage */}
       {total === 0 || !current ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-8 text-gray-400 gap-2">
           <Smile className="w-12 h-12 stroke-1 text-gray-300" />
           <p className="text-sm font-bold text-gray-700">No Tough Nuts left!</p>
           <p className="text-xs text-gray-500 max-w-xs">
-            Flag tricky words with 🥜 in Browse and they'll show up here for
-            focused drilling.
+            Flag tricky words with <Brain className="w-5 h-5" /> in Browse and
+            they'll show up here for focused drilling.
           </p>
         </div>
       ) : (
@@ -197,8 +208,8 @@ export default function ToughNutView({
               >
                 <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
                   <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                    <span className="text-[8px] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border bg-warning-soft text-warning-vibrant border-warning-vibrant/20">
-                      Tough Nut 🥜
+                    <span className="text-[8px] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border bg-warning-soft text-warning-vibrant border-warning-vibrant/20 inline-flex items-center gap-1">
+                      Tough Nut <Brain className="w-3 h-3" />
                     </span>
                     {current.mastered && (
                       <span className="text-[8px] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border bg-success-soft text-success-vibrant border-success-vibrant/20">
@@ -240,8 +251,27 @@ export default function ToughNutView({
                   </div>
                 </div>
 
-                {/* Floating actions */}
-                <div className="absolute right-5 bottom-20 flex flex-col items-center gap-3 opacity-80 hover:opacity-100 transition-opacity">
+                {/* Floating status actions */}
+                <div className="absolute right-5 bottom-10 flex flex-col items-center gap-2.5 opacity-70 hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMastered(current);
+                    }}
+                    className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                      current.mastered
+                        ? "bg-success-vibrant/90 border-success-vibrant text-white"
+                        : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
+                    }`}
+                    title={
+                      current.mastered
+                        ? "Unmark Mastered"
+                        : "Mark as Mastered"
+                    }
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                  </button>
                   <div className="flex flex-col items-center gap-1">
                     <button
                       type="button"
@@ -249,7 +279,7 @@ export default function ToughNutView({
                         e.stopPropagation();
                         markNotTough(current);
                       }}
-                      className="w-11 h-11 rounded-full border-2 border-warning-vibrant/70 bg-white/80 text-warning-vibrant shadow-md flex items-center justify-center transition-all cursor-pointer active:scale-95 hover:bg-warning-vibrant hover:text-white"
+                      className="w-11 h-11 rounded-full border-2 border-warning-vibrant bg-warning-vibrant/90 text-white shadow-md flex items-center justify-center transition-all cursor-pointer active:scale-95 hover:bg-warning-vibrant"
                       title="Mark as Not Tough"
                     >
                       <Smile className="w-5 h-5" />
@@ -260,34 +290,14 @@ export default function ToughNutView({
                       Tough
                     </span>
                   </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleMastered(current);
-                      }}
-                      className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
-                        current.mastered
-                          ? "bg-success-vibrant/90 border-success-vibrant text-white"
-                          : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
-                      }`}
-                      title={current.mastered ? "Unmark Mastered" : "Mark as Mastered"}
-                    >
-                      <Check className="w-5 h-5" />
-                    </button>
-                    <span className="text-[9px] font-bold tracking-wider uppercase text-gray-400 leading-none text-center">
-                      Mastered
-                    </span>
-                  </div>
                 </div>
 
                 {/* Swipe hint */}
-                <div className="flex flex-col items-center gap-1 select-none pointer-events-none">
-                  <span className="text-[11px] font-bold tracking-wider uppercase text-gray-400">
+                <div className="flex flex-col items-center gap-0.5 select-none pointer-events-none">
+                  <span className="text-[9px] text-gray-400">
                     Word {focusIndex + 1} of {total}
                   </span>
-                  <ChevronUp className="w-4 h-4 text-gray-300" />
+                  <ChevronUp className="w-3 h-3 text-gray-200" />
                 </div>
               </div>
 
@@ -399,12 +409,31 @@ export default function ToughNutView({
                   </div>
                 </div>
 
-                {/* Floating actions (mirror the front face) */}
+                {/* Floating status actions (mirrors the front face) */}
                 <div
-                  className="absolute right-5 bottom-20 z-20 flex flex-col items-center gap-3 opacity-80 hover:opacity-100 transition-opacity"
+                  className="absolute right-5 bottom-10 z-20 flex flex-col items-center gap-2.5 opacity-70 hover:opacity-100 transition-opacity"
                   onPointerDown={(e) => e.stopPropagation()}
                   onPointerUp={(e) => e.stopPropagation()}
                 >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMastered(current);
+                    }}
+                    className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
+                      current.mastered
+                        ? "bg-success-vibrant/90 border-success-vibrant text-white"
+                        : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
+                    }`}
+                    title={
+                      current.mastered
+                        ? "Unmark Mastered"
+                        : "Mark as Mastered"
+                    }
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                  </button>
                   <div className="flex flex-col items-center gap-1">
                     <button
                       type="button"
@@ -412,7 +441,7 @@ export default function ToughNutView({
                         e.stopPropagation();
                         markNotTough(current);
                       }}
-                      className="w-11 h-11 rounded-full border-2 border-warning-vibrant/70 bg-white/80 text-warning-vibrant shadow-md flex items-center justify-center transition-all cursor-pointer active:scale-95 hover:bg-warning-vibrant hover:text-white"
+                      className="w-11 h-11 rounded-full border-2 border-warning-vibrant bg-warning-vibrant/90 text-white shadow-md flex items-center justify-center transition-all cursor-pointer active:scale-95 hover:bg-warning-vibrant"
                       title="Mark as Not Tough"
                     >
                       <Smile className="w-5 h-5" />
@@ -423,33 +452,6 @@ export default function ToughNutView({
                       Tough
                     </span>
                   </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleMastered(current);
-                      }}
-                      className={`w-11 h-11 rounded-full border-2 shadow-md flex items-center justify-center transition-colors cursor-pointer active:scale-95 ${
-                        current.mastered
-                          ? "bg-success-vibrant/90 border-success-vibrant text-white"
-                          : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
-                      }`}
-                      title={current.mastered ? "Unmark Mastered" : "Mark as Mastered"}
-                    >
-                      <Check className="w-5 h-5" />
-                    </button>
-                    <span className="text-[9px] font-bold tracking-wider uppercase text-gray-400 leading-none text-center">
-                      Mastered
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-center gap-1 pb-4 select-none pointer-events-none">
-                  <span className="text-[11px] font-bold tracking-wider uppercase text-gray-400">
-                    Word {focusIndex + 1} of {total}
-                  </span>
-                  <ChevronUp className="w-4 h-4 text-gray-300" />
                 </div>
               </div>
             </motion.div>
@@ -463,7 +465,7 @@ export default function ToughNutView({
           title={`Tough Nuts (${total})`}
           body="Swipe to drill. A word only leaves this list when you explicitly mark it Not Tough."
           placement="bottom"
-          icon={<span className="text-xl leading-none">🥜</span>}
+          icon={<Brain className="w-5 h-5" />}
           onDismiss={dismissDrillCoachMark}
         />
       )}

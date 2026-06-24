@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Word, WordFlags } from "../types";
 import { speakWord } from "../utils/speech";
-import { Volume2, ChevronRight, CheckCircle2, ChevronDown, BookOpen } from "lucide-react";
+import { Volume2, ChevronRight, CheckCircle2, ChevronDown, BookOpen, Brain } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { formatDefinitions } from "../utils/wordContent";
 import LetterSelectorModal from "./LetterSelectorModal";
@@ -140,8 +140,8 @@ export default function MasteredView({
 
                     <div className="flex items-center gap-2">
                       {word.toughNut && (
-                        <span className="text-[9px] font-bold text-warning-vibrant bg-warning-soft px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Tough 🥜
+                        <span className="text-[9px] font-bold text-warning-vibrant bg-warning-soft px-2 py-0.5 rounded-full uppercase tracking-wider inline-flex items-center gap-1">
+                          Tough <Brain className="w-3 h-3" />
                         </span>
                       )}
                       <span className="text-[9px] font-bold text-success-vibrant bg-success-soft px-2 py-0.5 rounded-full uppercase tracking-wider">
@@ -225,9 +225,15 @@ export default function MasteredView({
                                     : "text-warning-vibrant bg-white hover:bg-warning-soft border-gray-150"
                                 }`}
                               >
-                                {word.toughNut
-                                  ? "Tough Nut 🥜"
-                                  : "Flag Tough Nut 🥜"}
+                                {word.toughNut ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    Tough Nut <Brain className="w-3 h-3" />
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1">
+                                    Flag Tough Nut <Brain className="w-3 h-3" />
+                                  </span>
+                                )}
                               </button>
 
                               <button

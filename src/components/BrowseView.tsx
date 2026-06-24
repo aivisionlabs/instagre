@@ -69,7 +69,13 @@ const BROWSE_COACH_STEPS: CoachMarkTourStep[] = [
   {
     target: "#browse_tab [data-coach='browse-flags']",
     title: "Mark your progress",
-    body: "Tap ✓ when you've mastered a word, or 🥜 to flag a Tough Nut. The card stays put until you swipe.",
+    body: (
+      <>
+        Tap ✓ when you&apos;ve mastered a word, or{" "}
+        <Brain className="w-4 h-4 inline-block align-[-2px]" /> to flag a Tough
+        Nut. The card stays put until you swipe.
+      </>
+    ),
     placement: "top",
   },
 ];
@@ -538,8 +544,8 @@ export default function BrowseView({
         </span>
       )}
       {word.toughNut && (
-        <span className="text-[8px] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border bg-warning-soft text-warning-vibrant border-warning-vibrant/20">
-          Tough Nut 🥜
+        <span className="text-[8px] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border bg-warning-soft text-warning-vibrant border-warning-vibrant/20 inline-flex items-center gap-1">
+          Tough Nut <Brain className="w-3 h-3" />
         </span>
       )}
     </div>
