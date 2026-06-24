@@ -3,6 +3,7 @@ import { Word, WordFlags } from "../types";
 import { speakWord } from "../utils/speech";
 import { Volume2, ChevronRight, CheckCircle2, ChevronDown, BookOpen } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { formatDefinitions } from "../utils/wordContent";
 import LetterSelectorModal from "./LetterSelectorModal";
 
 interface MasteredViewProps {
@@ -169,7 +170,9 @@ export default function MasteredView({
                                 Definition
                               </p>
                               <p className="text-gray-800 font-sans leading-relaxed">
-                                {word.definition}
+                              <p className="text-[11px] text-gray-500 line-clamp-2">
+                                {formatDefinitions(word.definitions)}
+                              </p>
                               </p>
                             </div>
 

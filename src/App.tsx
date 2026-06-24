@@ -10,8 +10,14 @@ import {
   updateProfile,
   touchStreak,
 } from "./data/auth";
-import { setProgressFlags, initSync, teardownSync } from "./data/sync";
+import { setProgressFlags, markWordViewed, initSync, teardownSync } from "./data/sync";
 import { logger } from "./utils/logger";
+import { formatDefinitions, wordMatchesDefinition } from "./utils/wordContent";
+import {
+  DefinitionsHeading,
+  DefinitionsList,
+  WordEtymology,
+} from "./components/DefinitionsList";
 import {
   getContinueState,
   resolveContinueTarget,
@@ -47,6 +53,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { speakWord } from "./utils/speech";
+import { isWordUnseen } from "./utils/wordStatus";
 
 type AppView = "loading" | "splash" | "signup" | "signin" | "app";
 type Tab = "Home" | "Browse" | "Mastered" | "Tough Nut" | "Profile";
@@ -88,6 +95,8 @@ export default function App() {
   );
   const wordsRef = useRef<Word[]>([]);
   const lastSavedContinueRef = useRef<ContinueState | null>(null);
+  const browseCurrentWordIdRef = useRef<string | null>(null);
+  const prevTabRef = useRef<Tab>("Home");
 
   // Search
   const [isSearchActive, setIsSearchActive] = useState(false);
@@ -322,6 +331,35 @@ export default function App() {
     }
   };
 
+  const handleMarkViewed = useCallback(
+    (wordId: string) => {
+      setWords((prev) => {
+        const word = prev.find((w) => w.id === wordId);
+        if (!word || word.viewed) return prev;
+        if (userId) markWordViewed(userId, wordId);
+        return prev.map((w) =>
+          w.id === wordId ? { ...w, viewed: true } : w,
+        );
+      });
+    },
+    [userId],
+  );
+
+  const handleBrowseCurrentWordChange = useCallback((wordId: string | null) => {
+    browseCurrentWordIdRef.current = wordId;
+  }, []);
+
+  // Mark the visible browse card when leaving the tab (not on landing — that
+  // would hide the Unseen pill before the user can see it).
+  useEffect(() => {
+    const prev = prevTabRef.current;
+    if (prev === "Browse" && activeTab !== "Browse") {
+      const wordId = browseCurrentWordIdRef.current;
+      if (wordId) handleMarkViewed(wordId);
+    }
+    prevTabRef.current = activeTab;
+  }, [activeTab, handleMarkViewed]);
+
   const selectLetter = (letter: string) => {
     setSelectedLetter(letter);
   };
@@ -379,7 +417,7 @@ export default function App() {
       : words.filter(
           (w) =>
             w.word.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            w.definition.toLowerCase().includes(searchQuery.toLowerCase()),
+            wordMatchesDefinition(w, searchQuery),
         );
 
   const masteredTotalCount = words.filter((w) => w.mastered).length;
@@ -496,7 +534,8 @@ export default function App() {
                   <div
                     key={word.id}
                     onClick={() => {
-                      setSelectedWordForModal(word);
+                      handleMarkViewed(word.id);
+                      setSelectedWordForModal({ ...word, viewed: true });
                       setIsSearchActive(false);
                       setSearchQuery("");
                     }}
@@ -512,12 +551,12 @@ export default function App() {
                         </span>
                       </div>
                       <p className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
-                        {word.definition}
+                        {formatDefinitions(word.definitions)}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {!word.mastered && !word.toughNut && (
+                      {isWordUnseen(word) && (
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider bg-gray-100 text-gray-500">
                           Unseen
                         </span>
@@ -559,6 +598,8 @@ export default function App() {
               resumeWordId={browseResumeWordId}
               onSetSelectedLetter={selectLetter}
               onSetFlags={handleSetFlags}
+              onMarkViewed={handleMarkViewed}
+              onCurrentWordChange={handleBrowseCurrentWordChange}
               onSaveContinuePosition={handleSaveContinuePosition}
             />
           )}
@@ -657,8 +698,7 @@ export default function App() {
 
             <div className="text-center space-y-2 pt-2">
               <div className="flex justify-center gap-1.5">
-                {!selectedWordForModal.mastered &&
-                  !selectedWordForModal.toughNut && (
+                {isWordUnseen(selectedWordForModal) && (
                     <span className="text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider bg-gray-100 text-gray-500">
                       Unseen
                     </span>
@@ -696,13 +736,19 @@ export default function App() {
             </div>
 
             <div className="space-y-1.5 text-xs">
-              <h5 className="font-extrabold text-text-secondary uppercase tracking-wider">
-                Primary Meaning
-              </h5>
-              <p className="bg-gray-50 border border-gray-100 p-3 rounded-xl leading-relaxed text-gray-800">
-                {selectedWordForModal.definition}
-              </p>
+              <DefinitionsHeading count={selectedWordForModal.definitions.length} />
+              <div className="bg-gray-50 border border-gray-100 p-3 rounded-xl">
+                <DefinitionsList
+                  definitions={selectedWordForModal.definitions}
+                  variant="detail"
+                />
+              </div>
             </div>
+
+            <WordEtymology
+              etymology={selectedWordForModal.etymology}
+              className="text-xs [&_p]:text-xs"
+            />
 
             <div className="pt-2 border-t border-gray-100 space-y-2">
               <div className="grid grid-cols-2 gap-2 font-bold text-[10px] uppercase text-center leading-none">

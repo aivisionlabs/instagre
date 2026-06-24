@@ -8,6 +8,11 @@ import {
   hasSeenCoachMark,
   markCoachMarkSeen,
 } from "./CoachMarks";
+import {
+  DefinitionsHeading,
+  DefinitionsList,
+  WordEtymology,
+} from "./DefinitionsList";
 
 interface ToughNutViewProps {
   words: Word[];
@@ -227,9 +232,12 @@ export default function ToughNutView({
                     {current.partOfSpeech}
                   </span>
 
-                  <p className="text-lg leading-relaxed text-text-secondary max-w-[300px] mt-2">
-                    {current.definition}
-                  </p>
+                  <div className="w-full max-w-[300px] mt-2">
+                    <DefinitionsList
+                      definitions={current.definitions}
+                      variant="front"
+                    />
+                  </div>
                 </div>
 
                 {/* Floating actions */}
@@ -329,14 +337,15 @@ export default function ToughNutView({
                   data-back-scroll
                   className="flex-1 overflow-y-auto px-7 py-5 space-y-5"
                 >
-                  <section className="space-y-1.5">
-                    <h5 className="text-[11px] font-extrabold uppercase tracking-wider text-text-secondary">
-                      Definition
-                    </h5>
-                    <p className="text-[15px] leading-relaxed text-text-primary">
-                      {current.definition}
-                    </p>
+                  <section className="space-y-2">
+                    <DefinitionsHeading count={current.definitions.length} />
+                    <DefinitionsList
+                      definitions={current.definitions}
+                      variant="detail"
+                    />
                   </section>
+
+                  <WordEtymology etymology={current.etymology} />
 
                   {current.examples.length > 0 && (
                     <section className="space-y-2">

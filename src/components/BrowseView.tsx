@@ -9,6 +9,13 @@ import {
 import { createPortal } from "react-dom";
 import { Word, WordFlags } from "../types";
 import { speakWord } from "../utils/speech";
+import { playSound } from "../utils/sounds";
+import { isWordUnseen } from "../utils/wordStatus";
+import {
+  DefinitionsHeading,
+  DefinitionsList,
+  WordEtymology,
+} from "./DefinitionsList";
 import {
   Volume2,
   CheckCircle,
@@ -50,7 +57,7 @@ const BROWSE_COACH_STEPS: CoachMarkTourStep[] = [
   {
     target: "#browse_tab [data-coach='browse-card']",
     title: "Flip for details",
-    body: "Tap the card to flip it and see example sentences, synonyms, and antonyms.",
+    body: "Tap the card to flip it and see definitions, examples, synonyms, antonyms and etymology",
     placement: "top",
   },
   {
@@ -73,6 +80,8 @@ interface BrowseViewProps {
   resumeWordId: string | null;
   onSetSelectedLetter: (letter: string) => void;
   onSetFlags: (wordId: string, flags: Partial<WordFlags>) => void;
+  onMarkViewed: (wordId: string) => void;
+  onCurrentWordChange: (wordId: string | null) => void;
   onSaveContinuePosition: (letter: string, wordId: string) => void;
 }
 
@@ -154,6 +163,8 @@ export default function BrowseView({
   resumeWordId,
   onSetSelectedLetter,
   onSetFlags,
+  onMarkViewed,
+  onCurrentWordChange,
   onSaveContinuePosition,
 }: BrowseViewProps) {
   const [focusIndex, setFocusIndex] = useState(0);
@@ -218,6 +229,10 @@ export default function BrowseView({
   const current = filteredWords[focusIndex];
 
   useEffect(() => {
+    onCurrentWordChange(current?.id ?? null);
+  }, [current?.id, onCurrentWordChange]);
+
+  useEffect(() => {
     if (!current) return;
     if (skipSaveAfterRestoreRef.current) {
       skipSaveAfterRestoreRef.current = false;
@@ -242,6 +257,8 @@ export default function BrowseView({
 
   const goTo = (dir: "up" | "down") => {
     if (total === 0) return;
+    if (current?.id) onMarkViewed(current.id);
+    playSound("cardSwipe");
     setExitFlipped(isFlipped);
     setSwipeDir(dir);
     setFocusIndex((prev) =>
@@ -284,6 +301,7 @@ export default function BrowseView({
     const next = !word.mastered;
     onSetFlags(word.id, { mastered: next });
     if (next) {
+      playSound("mastered");
       flyIconToTab("mastered", source);
       dismissBrowseTourIfActive();
     }
@@ -293,6 +311,7 @@ export default function BrowseView({
     const next = !word.toughNut;
     onSetFlags(word.id, { toughNut: next });
     if (next) {
+      playSound("toughNut");
       flyIconToTab("tough", source);
       dismissBrowseTourIfActive();
     }
@@ -489,14 +508,26 @@ export default function BrowseView({
       suppressClick.current = false;
       return;
     }
+    playSound("cardFlip");
     setIsFlipped(false);
   };
 
+  const flipToBack = () => {
+    playSound("cardFlip");
+    setIsFlipped(true);
+  };
+
+  const selectLetterFromBrowse = (letter: string) => {
+    if (current?.id && letter !== selectedLetter) onMarkViewed(current.id);
+    onSetSelectedLetter(letter);
+    setShowLetters(false);
+  };
+
   // A word can carry both flags, so render one pill per active flag (or a
-  // neutral "Unseen" pill when it has neither).
+  // neutral "Unseen" pill when it has not been viewed and has neither flag).
   const FlagPills = ({ word }: { word: Word }) => (
     <div className="flex items-center justify-center gap-1.5 flex-wrap">
-      {!word.mastered && !word.toughNut && (
+      {isWordUnseen(word) && (
         <span className="text-[8px] font-extrabold px-3 py-1 rounded-full uppercase tracking-widest border bg-gray-100 text-gray-500 border-gray-200">
           Unseen
         </span>
@@ -590,7 +621,11 @@ export default function BrowseView({
         </div>
       ) : (
         <div className="flex-1 relative [perspective:1600px] overflow-hidden">
-          <AnimatePresence mode="wait" custom={swipeDir} onExitComplete={handleCardExitComplete}>
+          <AnimatePresence
+            mode="wait"
+            custom={swipeDir}
+            onExitComplete={handleCardExitComplete}
+          >
             <motion.div
               key={current.id}
               custom={swipeDir}
@@ -625,14 +660,14 @@ export default function BrowseView({
             >
               {/* ============================== FRONT FACE */}
               <div
-                onClick={() => setIsFlipped(true)}
+                onClick={flipToBack}
                 className={`absolute inset-0 [backface-visibility:hidden] bg-white flex flex-col px-7 pt-2 pb-4 cursor-pointer ${
                   isFlipped ? "pointer-events-none" : ""
                 }`}
               >
                 <div
                   data-coach="browse-card"
-                  className="flex-1 flex flex-col items-center justify-start text-center gap-3 pt-1"
+                  className="flex-1 flex flex-col items-center justify-center text-center gap-3"
                 >
                   <FlagPills word={current} />
 
@@ -663,9 +698,13 @@ export default function BrowseView({
                   </span>
 
                   {showDefinition && (
-                    <p className="text-lg leading-relaxed text-text-secondary max-w-[300px] mt-2">
-                      {current.definition}
-                    </p>
+                    <div className="w-full max-w-[300px] mt-2">
+                      <DefinitionsList
+                        definitions={current.definitions}
+                        variant="front"
+                        numbered={false}
+                      />
+                    </div>
                   )}
                 </div>
 
@@ -685,7 +724,9 @@ export default function BrowseView({
                         ? "bg-success-vibrant/90 border-success-vibrant text-white"
                         : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
                     }`}
-                    title={current.mastered ? "Unmark Mastered" : "Mark as Mastered"}
+                    title={
+                      current.mastered ? "Unmark Mastered" : "Mark as Mastered"
+                    }
                   >
                     <CheckCircle className="w-5 h-5" />
                   </button>
@@ -701,7 +742,11 @@ export default function BrowseView({
                           ? "bg-warning-vibrant/90 border-warning-vibrant text-white"
                           : "bg-white/70 border-warning-vibrant/70 text-warning-vibrant hover:bg-warning-vibrant hover:text-white"
                       }`}
-                      title={current.toughNut ? "Unmark Tough Nut" : "Mark as Tough Nut"}
+                      title={
+                        current.toughNut
+                          ? "Unmark Tough Nut"
+                          : "Mark as Tough Nut"
+                      }
                     >
                       <Brain className="w-5 h-5" />
                     </button>
@@ -716,12 +761,12 @@ export default function BrowseView({
                 {/* Swipe hint */}
                 <div
                   data-coach="browse-swipe"
-                  className="flex flex-col items-center gap-1 select-none pointer-events-none"
+                  className="flex flex-col items-center gap-0.5 select-none pointer-events-none"
                 >
-                  <span className="text-[11px] font-bold tracking-wider uppercase text-gray-400">
+                  <span className="text-[9px] text-gray-400">
                     Word {focusIndex + 1} of {total}
                   </span>
-                  <ChevronUp className="w-4 h-4 text-gray-300" />
+                  <ChevronUp className="w-3 h-3 text-gray-200" />
                 </div>
               </div>
 
@@ -768,13 +813,13 @@ export default function BrowseView({
                   {...backPointerHandlers}
                   className="flex-1 overflow-y-auto px-7 py-5 space-y-5"
                 >
-                  <section className="space-y-1.5">
-                    <h5 className="text-[11px] font-extrabold uppercase tracking-wider text-text-secondary">
-                      Definition
-                    </h5>
-                    <p className="text-[15px] leading-relaxed text-text-primary">
-                      {current.definition}
-                    </p>
+                  <section className="space-y-2">
+                    <DefinitionsHeading count={current.definitions.length} />
+                    <DefinitionsList
+                      definitions={current.definitions}
+                      variant="detail"
+                      numbered={false}
+                    />
                   </section>
 
                   {current.examples.length > 0 && (
@@ -800,7 +845,7 @@ export default function BrowseView({
                       <h5 className="text-[11px] font-extrabold uppercase tracking-wider text-text-secondary">
                         Synonyms
                       </h5>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-col items-start gap-1.5">
                         {current.synonyms.map((s) => (
                           <span
                             key={s}
@@ -815,7 +860,7 @@ export default function BrowseView({
                       <h5 className="text-[11px] font-extrabold uppercase tracking-wider text-text-secondary">
                         Antonyms
                       </h5>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-col items-start gap-1.5">
                         {current.antonyms.map((a) => (
                           <span
                             key={a}
@@ -827,6 +872,8 @@ export default function BrowseView({
                       </div>
                     </section>
                   </div>
+
+                  <WordEtymology etymology={current.etymology} />
                 </div>
 
                 {/* Floating status actions (mirrors the front face) */}
@@ -847,7 +894,9 @@ export default function BrowseView({
                         ? "bg-success-vibrant/90 border-success-vibrant text-white"
                         : "bg-white/70 border-success-vibrant/70 text-success-vibrant hover:bg-success-vibrant hover:text-white"
                     }`}
-                    title={current.mastered ? "Unmark Mastered" : "Mark as Mastered"}
+                    title={
+                      current.mastered ? "Unmark Mastered" : "Mark as Mastered"
+                    }
                   >
                     <CheckCircle className="w-5 h-5" />
                   </button>
@@ -863,7 +912,11 @@ export default function BrowseView({
                           ? "bg-warning-vibrant/90 border-warning-vibrant text-white"
                           : "bg-white/70 border-warning-vibrant/70 text-warning-vibrant hover:bg-warning-vibrant hover:text-white"
                       }`}
-                      title={current.toughNut ? "Unmark Tough Nut" : "Mark as Tough Nut"}
+                      title={
+                        current.toughNut
+                          ? "Unmark Tough Nut"
+                          : "Mark as Tough Nut"
+                      }
                     >
                       <Brain className="w-5 h-5" />
                     </button>
@@ -874,13 +927,6 @@ export default function BrowseView({
                     </span>
                   </div>
                 </div>
-
-                <div className="flex flex-col items-center gap-1 pb-4 select-none pointer-events-none">
-                  <span className="text-[11px] font-bold tracking-wider uppercase text-gray-400">
-                    Word {focusIndex + 1} of {total}
-                  </span>
-                  <ChevronUp className="w-4 h-4 text-gray-300" />
-                </div>
               </div>
             </motion.div>
           </AnimatePresence>
@@ -889,7 +935,10 @@ export default function BrowseView({
 
       {/* Floating icon flies toward Mastered / Tough Nut tab */}
       {showBrowseTour && !isFlipped && (
-        <CoachMarkTour steps={BROWSE_COACH_STEPS} onComplete={completeBrowseTour} />
+        <CoachMarkTour
+          steps={BROWSE_COACH_STEPS}
+          onComplete={completeBrowseTour}
+        />
       )}
 
       {iconFlies.map((fly) => {
@@ -939,7 +988,7 @@ export default function BrowseView({
             show={showLetters}
             onClose={() => setShowLetters(false)}
             selectedLetter={selectedLetter}
-            onSelectLetter={onSetSelectedLetter}
+            onSelectLetter={selectLetterFromBrowse}
             words={words}
           />
         )}

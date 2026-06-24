@@ -9,9 +9,9 @@ import {
 
 /**
  * Words are split into two halves:
- *  - CONTENT (definition, examples, …) lives in the global `words` table and is
+ *  - CONTENT (definitions, examples, …) lives in the global `words` table and is
  *    cached locally under one key (same for every user).
- *  - PROGRESS (mastered / toughNut) is per-user and lives in localStorage only.
+ *  - PROGRESS (mastered / toughNut / viewed) is per-user and lives in localStorage only.
  *
  * Offline-first: `loadWordsCached` returns instantly from cache (or bundled seed),
  * and `pullWords` refreshes word content from Supabase in the background.
@@ -20,31 +20,54 @@ import {
 export const CONTENT_KEY = 'instagre_words_content';
 
 /** Word content only — the per-user flags are intentionally omitted here. */
-type WordContent = Omit<Word, 'mastered' | 'toughNut'>;
+type WordContent = Omit<Word, 'mastered' | 'toughNut' | 'viewed'>;
 
 interface WordRow {
   id: string;
   word: string;
   ipa: string;
   part_of_speech: string;
-  definition: string;
-  secondary_definition: string | null;
+  definitions: string[] | null;
   examples: string[] | null;
   synonyms: string[] | null;
   antonyms: string[] | null;
   etymology: string;
   audio_url: string | null;
   sort_order: number;
+  /** @deprecated legacy column — removed after migration 0004 */
+  definition?: string;
+  secondary_definition?: string | null;
+}
+
+type CachedWordContent = WordContent & {
+  definition?: string;
+  secondaryDefinition?: string;
+};
+
+function normalizeDefinitions(raw: CachedWordContent): string[] {
+  if (Array.isArray(raw.definitions) && raw.definitions.length) {
+    return raw.definitions;
+  }
+  const legacy = [raw.definition, raw.secondaryDefinition].filter(
+    (d): d is string => Boolean(d?.trim()),
+  );
+  return legacy.length ? legacy : [];
 }
 
 function rowToContent(r: WordRow): WordContent {
+  const definitions =
+    r.definitions?.length
+      ? r.definitions
+      : [r.definition, r.secondary_definition].filter(
+          (d): d is string => Boolean(d?.trim()),
+        );
+
   return {
     id: r.id,
     word: r.word,
     ipa: r.ipa,
     partOfSpeech: r.part_of_speech,
-    definition: r.definition,
-    secondaryDefinition: r.secondary_definition ?? undefined,
+    definitions,
     examples: r.examples ?? [],
     synonyms: r.synonyms ?? [],
     antonyms: r.antonyms ?? [],
@@ -55,7 +78,7 @@ function rowToContent(r: WordRow): WordContent {
 
 /** Strip the flags off the bundled seed to use it as fallback content. */
 function seedContent(): WordContent[] {
-  return initialWords.map(({ mastered: _m, toughNut: _t, ...content }) => content);
+  return initialWords.map(({ mastered: _m, toughNut: _t, ...content }) => content as WordContent);
 }
 
 function readContentCache(): WordContent[] | null {
@@ -63,7 +86,11 @@ function readContentCache(): WordContent[] | null {
     const raw = localStorage.getItem(CONTENT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length ? (parsed as WordContent[]) : null;
+    if (!Array.isArray(parsed) || !parsed.length) return null;
+    return (parsed as CachedWordContent[]).map((item) => {
+      const { definition: _d, secondaryDefinition: _s, ...rest } = item;
+      return { ...rest, definitions: normalizeDefinitions(item) };
+    });
   } catch {
     return null;
   }
@@ -77,7 +104,12 @@ function writeContentCache(content: WordContent[]): void {
 function merge(content: WordContent[], progress: ProgressMap): Word[] {
   return content.map((c) => {
     const p = progress[c.id];
-    return { ...c, mastered: p?.mastered ?? false, toughNut: p?.toughNut ?? false };
+    return {
+      ...c,
+      mastered: p?.mastered ?? false,
+      toughNut: p?.toughNut ?? false,
+      viewed: p?.viewed ?? false,
+    };
   });
 }
 

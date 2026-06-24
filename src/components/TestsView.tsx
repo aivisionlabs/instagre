@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Word, WordFlags, QuizQuestion, TestHistory } from '../types';
 import { Award, Play, Volume2, HelpCircle, Check, X, ShieldAlert, Zap, History, RotateCcw, AlertTriangle, BookOpen } from 'lucide-react';
 import { speakWord } from '../utils/speech';
+import { formatDefinitions, primaryDefinition } from '../utils/wordContent';
 
 interface TestsViewProps {
   words: Word[];
@@ -97,9 +98,10 @@ export default function TestsView({
         // Get 3 incorrect distractor definitions
         const otherDefs = words
           .filter(w => w.id !== word.id)
-          .map(w => w.definition);
+          .map(w => primaryDefinition(w.definitions));
         const distractors = otherDefs.sort(() => 0.5 - Math.random()).slice(0, 3);
-        const options = [word.definition, ...distractors].sort(() => 0.5 - Math.random());
+        const answer = primaryDefinition(word.definitions);
+        const options = [answer, ...distractors].sort(() => 0.5 - Math.random());
 
         return {
           id: questionId,
@@ -107,15 +109,16 @@ export default function TestsView({
           word,
           questionText: `What is the precise definition of the GRE word "${word.word}"?`,
           options,
-          correctAnswer: word.definition
+          correctAnswer: answer
         };
       } else if (typeRand === 1) {
         // Flashcard recall
+        const answer = primaryDefinition(word.definitions);
         return {
           id: questionId,
           type: 'flashcard-recall',
           word,
-          questionText: `Do you recall the correct GRE vocabulary word corresponding to this definition?\n\n"${word.definition}"`,
+          questionText: `Do you recall the correct GRE vocabulary word corresponding to this definition?\n\n"${answer}"`,
           correctAnswer: word.word
         };
       } else {
@@ -633,7 +636,9 @@ export default function TestsView({
                   >
                     <div className="space-y-0.5">
                       <span className="font-serif font-extrabold text-gray-900">{word.word}</span>
-                      <p className="text-[10px] text-gray-400 line-clamp-1">{word.definition}</p>
+                      <p className="text-[10px] text-gray-400 line-clamp-2">
+                        {formatDefinitions(word.definitions)}
+                      </p>
                     </div>
 
                     <button

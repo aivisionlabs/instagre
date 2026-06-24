@@ -17,6 +17,9 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { Word } from '../src/types';
 
+type SeedWord = Omit<Word, 'id' | 'viewed'>;
+type SeedWordWithId = Omit<Word, 'viewed'>;
+
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 const POS_MAP: Record<string, string> = {
@@ -119,23 +122,14 @@ function formatEtymology(raw: string): string {
   return `From ${trimmed}`;
 }
 
-function splitDefinition(meaning: string): { definition: string; secondaryDefinition?: string } {
-  const parts = meaning
+function splitDefinitions(meaning: string): string[] {
+  return meaning
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
-
-  if (parts.length <= 1) {
-    return { definition: meaning.trim() };
-  }
-
-  return {
-    definition: parts[0],
-    secondaryDefinition: parts.slice(1).join('; '),
-  };
 }
 
-function assignIds(words: Omit<Word, 'id'>[]): Word[] {
+function assignIds(words: SeedWord[]): SeedWordWithId[] {
   const counters = new Map<string, number>();
 
   return words.map((word) => {
@@ -146,19 +140,19 @@ function assignIds(words: Omit<Word, 'id'>[]): Word[] {
   });
 }
 
-function rowToWord(cells: string[]): Omit<Word, 'id'> | null {
+function rowToWord(cells: string[]): SeedWord | null {
   const [word, pronunciation, pos, meaning, example, synonyms, antonyms, etymology] = cells;
 
   if (!word?.trim() || !meaning?.trim()) return null;
 
-  const { definition, secondaryDefinition } = splitDefinition(meaning);
+  const definitions = splitDefinitions(meaning);
+  if (!definitions.length) return null;
 
   return {
     word: titleCaseWord(word),
     ipa: pronunciation?.trim() ?? '',
     partOfSpeech: normalizePos(pos ?? ''),
-    definition,
-    secondaryDefinition,
+    definitions,
     examples: example?.trim() ? [example.trim()] : [],
     synonyms: splitList(synonyms ?? ''),
     antonyms: splitList(antonyms ?? ''),
@@ -168,7 +162,7 @@ function rowToWord(cells: string[]): Omit<Word, 'id'> | null {
   };
 }
 
-function parseCsvFile(filePath: string): Omit<Word, 'id'>[] {
+function parseCsvFile(filePath: string): SeedWord[] {
   const text = readFileSync(filePath, 'utf8');
   const rows = parseCsv(text);
   if (!rows.length) return [];
@@ -186,7 +180,7 @@ function parseCsvFile(filePath: string): Omit<Word, 'id'>[] {
     );
   }
 
-  const words: Omit<Word, 'id'>[] = [];
+  const words: SeedWord[] = [];
   for (const row of rows.slice(1)) {
     if (!row.some((cell) => cell.trim())) continue;
     const padded = [...row];
@@ -218,8 +212,8 @@ function collectCsvPaths(inputs: string[]): string[] {
   return paths;
 }
 
-function mergeWords(all: Omit<Word, 'id'>[]): Omit<Word, 'id'>[] {
-  const byKey = new Map<string, Omit<Word, 'id'>>();
+function mergeWords(all: SeedWord[]): SeedWord[] {
+  const byKey = new Map<string, SeedWord>();
   const duplicates: string[] = [];
 
   for (const word of all) {
@@ -246,37 +240,30 @@ function tsString(value: string): string {
   return JSON.stringify(value);
 }
 
-function formatWord(word: Word, indent: string): string {
+function formatWord(word: SeedWordWithId, indent: string): string {
   const lines: string[] = [
-    `${indent}{`,
-    `${indent}  id: ${tsString(word.id)},`,
-    `${indent}  word: ${tsString(word.word)},`,
-    `${indent}  ipa: ${tsString(word.ipa)},`,
-    `${indent}  partOfSpeech: ${tsString(word.partOfSpeech)},`,
-    `${indent}  definition: ${tsString(word.definition)},`,
+    indent + '{',
+    indent + '  id: ' + tsString(word.id) + ',',
+    indent + '  word: ' + tsString(word.word) + ',',
+    indent + '  ipa: ' + tsString(word.ipa) + ',',
+    indent + '  partOfSpeech: ' + tsString(word.partOfSpeech) + ',',
+    indent + '  definitions: [' + word.definitions.map((d) => tsString(d)).join(', ') + '],',
+    indent + '  examples: [',
+    ...word.examples.map((ex) => indent + '    ' + tsString(ex) + ','),
+    indent + '  ],',
+    indent + '  synonyms: [' + word.synonyms.map((s) => tsString(s)).join(', ') + '],',
+    indent + '  antonyms: [' + word.antonyms.map((s) => tsString(s)).join(', ') + '],',
+    indent + '  etymology: ' + tsString(word.etymology) + ',',
+    indent + '  mastered: false,',
+    indent + '  toughNut: false',
+    indent + '}',
   ];
-
-  if (word.secondaryDefinition) {
-    lines.push(`${indent}  secondaryDefinition: ${tsString(word.secondaryDefinition)},`);
-  }
-
-  lines.push(
-    `${indent}  examples: [`,
-    ...word.examples.map((ex) => `${indent}    ${tsString(ex)},`),
-    `${indent}  ],`,
-    `${indent}  synonyms: [${word.synonyms.map((s) => tsString(s)).join(', ')}],`,
-    `${indent}  antonyms: [${word.antonyms.map((s) => tsString(s)).join(', ')}],`,
-    `${indent}  etymology: ${tsString(word.etymology)},`,
-    `${indent}  mastered: false,`,
-    `${indent}  toughNut: false`,
-    `${indent}}`,
-  );
 
   return lines.join('\n');
 }
 
-function writeWordsData(words: Word[], outPath: string): void {
-  const sections = new Map<string, Word[]>();
+function writeWordsData(words: SeedWordWithId[], outPath: string): void {
+  const sections = new Map<string, SeedWordWithId[]>();
   for (const word of words) {
     const letter = word.word.charAt(0).toUpperCase();
     if (!sections.has(letter)) sections.set(letter, []);
@@ -299,7 +286,7 @@ function writeWordsData(words: Word[], outPath: string): void {
 
   const source = `import { Word } from './types';
 
-export const initialWords: Word[] = [
+export const initialWords: Omit<Word, 'viewed'>[] = [
 ${body.join('\n').trimEnd()}
 ];
 `;
@@ -342,7 +329,7 @@ if (!csvPaths.length) {
   process.exit(1);
 }
 
-const parsed: Omit<Word, 'id'>[] = [];
+const parsed: SeedWord[] = [];
 for (const filePath of csvPaths) {
   const words = parseCsvFile(filePath);
   console.log(`${basename(filePath)}: ${words.length} words`);

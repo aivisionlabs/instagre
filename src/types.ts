@@ -26,8 +26,7 @@ export interface Word {
   word: string;
   ipa: string;
   partOfSpeech: string;
-  definition: string;
-  secondaryDefinition?: string;
+  definitions: string[];
   examples: string[];
   synonyms: string[];
   antonyms: string[];
@@ -36,6 +35,8 @@ export interface Word {
   // Independent flags — a word can be both mastered AND a tough nut.
   mastered: boolean;
   toughNut: boolean;
+  /** True once the user has landed on this word's browse card or opened it elsewhere. */
+  viewed: boolean;
 }
 
 export type QuizType = 'multiple-choice' | 'flashcard-recall' | 'fill-in-blank';

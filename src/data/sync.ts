@@ -11,6 +11,7 @@ import { WordFlags } from '../types';
 export interface ProgressEntry {
   mastered: boolean;
   toughNut: boolean;
+  viewed: boolean;
   updated_at: string; // ISO
 }
 
@@ -19,6 +20,7 @@ function normalizeProgressEntry(raw: Partial<ProgressEntry> & { learned?: boolea
   return {
     mastered: raw.mastered ?? raw.learned ?? false,
     toughNut: raw.toughNut ?? false,
+    viewed: raw.viewed ?? false,
     updated_at: raw.updated_at ?? new Date().toISOString(),
   };
 }
@@ -70,13 +72,36 @@ export function applyPendingToProgress(userId: string, map: ProgressMap): Progre
  * pending op (coalesced by word id).
  */
 export function setProgressFlags(userId: string, wordId: string, flags: WordFlags): void {
+  const cache = readProgressCache(userId);
+  const existing = cache[wordId];
   const entry: ProgressEntry = {
     mastered: flags.mastered,
     toughNut: flags.toughNut,
+    viewed: existing?.viewed ?? false,
     updated_at: new Date().toISOString(),
   };
 
+  cache[wordId] = entry;
+  writeProgressCache(userId, cache);
+
+  const queue = readJSON<ProgressMap>(queueKey(userId), {});
+  queue[wordId] = entry;
+  localStorage.setItem(queueKey(userId), JSON.stringify(queue));
+}
+
+/** Record that the user has seen a word (browse card, search modal, etc.). */
+export function markWordViewed(userId: string, wordId: string): void {
   const cache = readProgressCache(userId);
+  const existing = cache[wordId];
+  if (existing?.viewed) return;
+
+  const entry: ProgressEntry = {
+    mastered: existing?.mastered ?? false,
+    toughNut: existing?.toughNut ?? false,
+    viewed: true,
+    updated_at: new Date().toISOString(),
+  };
+
   cache[wordId] = entry;
   writeProgressCache(userId, cache);
 
