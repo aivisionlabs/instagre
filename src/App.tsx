@@ -26,6 +26,12 @@ import {
   setContinueState,
   type ContinueState,
 } from "./data/continue";
+import {
+  getLastUnitState,
+  setLastUnitState,
+  type LastUnitState,
+} from "./data/lastUnit";
+import { unitNumberForWord } from "./data/units";
 import SplashView from "./components/SplashView";
 import SignupView from "./components/SignupView";
 import SignInView from "./components/SignInView";
@@ -119,6 +125,11 @@ export default function App() {
   const [continueTarget, setContinueTarget] = useState<ContinueState | null>(
     null,
   );
+  // The unit the user last started on the learning path — highlighted as
+  // "resume here". Persisted per user; units are never locked.
+  const [lastStartedUnit, setLastStartedUnit] = useState<LastUnitState | null>(
+    null,
+  );
   const wordsRef = useRef<Word[]>([]);
   const lastSavedContinueRef = useRef<ContinueState | null>(null);
   const browseCurrentWordIdRef = useRef<string | null>(null);
@@ -171,6 +182,8 @@ export default function App() {
       getContinueState(uid),
     );
     lastSavedContinueRef.current = initialContinue;
+
+    setLastStartedUnit(getLastUnitState(uid));
 
     setUserId(uid);
     setProfile(prof);
@@ -491,6 +504,11 @@ export default function App() {
   // Tapping a unit on the learning path opens Browse scoped to that unit's
   // words. setSelectedLetter directly (not selectLetter) so the scope survives.
   const navigateToUnit = (letter: string, unitNumber: number) => {
+    if (userId) {
+      const next = { letter, unitNumber };
+      setLastUnitState(userId, next);
+      setLastStartedUnit(next);
+    }
     setSelectedLetter(letter);
     setBrowseScope({ letter, unitNumber });
     navigateToTab("Browse");
@@ -522,6 +540,21 @@ export default function App() {
       if (!isSameSavedPosition) {
         setContinueState(userId, saved);
         lastSavedContinueRef.current = saved;
+      }
+
+      // Studying a word means its unit is "started" — highlight it on the path.
+      // Driven by session activity, not mastery, so mastering words elsewhere
+      // never shifts which unit is active.
+      const unitNumber = unitNumberForWord(wordsRef.current, letter, wordId);
+      if (unitNumber != null) {
+        const startedUnit = { letter, unitNumber };
+        setLastUnitState(userId, startedUnit);
+        setLastStartedUnit((prev) =>
+          prev?.letter === startedUnit.letter &&
+          prev?.unitNumber === startedUnit.unitNumber
+            ? prev
+            : startedUnit,
+        );
       }
 
       const next = resolveContinueTarget(wordsRef.current, saved);
@@ -738,6 +771,11 @@ export default function App() {
                 words={words}
                 activeLetter={pathLetter}
                 dailyMastered={dailyMastered}
+                lastStartedUnit={
+                  lastStartedUnit?.letter === pathLetter
+                    ? lastStartedUnit.unitNumber
+                    : null
+                }
                 onSelectLetter={handlePathSelectLetter}
                 onStartUnit={navigateToUnit}
               />

@@ -6,7 +6,7 @@ import {
   type Unit,
 } from "../data/units";
 import { DAILY_GOAL } from "../data/daily";
-import { BookOpen, Check, Lock, Play, ChevronDown } from "lucide-react";
+import { BookOpen, Check, Play, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import LetterSelectorModal from "./LetterSelectorModal";
 
@@ -14,6 +14,9 @@ interface LearningPathViewProps {
   words: Word[];
   activeLetter: string;
   dailyMastered: number;
+  /** Unit number the user last started for `activeLetter`, highlighted as
+   * "resume here". Null when they haven't started one in this letter. */
+  lastStartedUnit: number | null;
   onSelectLetter: (letter: string) => void;
   onStartUnit: (letter: string, unitNumber: number) => void;
 }
@@ -27,16 +30,19 @@ export default function LearningPathView({
   words,
   activeLetter,
   dailyMastered,
+  lastStartedUnit,
   onSelectLetter,
   onStartUnit,
 }: LearningPathViewProps) {
   const [showLetters, setShowLetters] = useState(false);
-  const [lockedHint, setLockedHint] = useState<number | null>(null);
   const activeNodeRef = useRef<HTMLDivElement | null>(null);
-  const hintTimer = useRef<number | null>(null);
 
-  const sections = buildSectionsForLetter(words, activeLetter);
-  const activeUnitNumber = findActiveUnitNumber(words, activeLetter);
+  const sections = buildSectionsForLetter(words, activeLetter, lastStartedUnit);
+  const activeUnitNumber = findActiveUnitNumber(
+    words,
+    activeLetter,
+    lastStartedUnit,
+  );
   const totalUnits = sections.reduce((n, s) => n + s.units.length, 0);
 
   const activeSection = sections.find((s) =>
@@ -50,20 +56,8 @@ export default function LearningPathView({
     node.scrollIntoView({ block: "center", behavior: "auto" });
   }, [activeLetter, activeUnitNumber]);
 
-  useEffect(
-    () => () => {
-      if (hintTimer.current) window.clearTimeout(hintTimer.current);
-    },
-    [],
-  );
-
+  // Every unit is startable — tapping any node opens it.
   const handleUnitClick = (unit: Unit) => {
-    if (unit.status === "locked") {
-      setLockedHint(unit.unitNumber);
-      if (hintTimer.current) window.clearTimeout(hintTimer.current);
-      hintTimer.current = window.setTimeout(() => setLockedHint(null), 1900);
-      return;
-    }
     onStartUnit(activeLetter, unit.unitNumber);
   };
 
@@ -161,7 +155,6 @@ export default function LearningPathView({
                       const offset = nodeOffset(globalIndex);
                       const isActive = unit.status === "active";
                       const isCompleted = unit.status === "completed";
-                      const isLocked = unit.status === "locked";
                       // Place the label opposite the sway direction so it never
                       // overlaps the centre track.
                       const labelLeft = offset <= 0;
@@ -203,24 +196,18 @@ export default function LearningPathView({
                                   ? "bg-success-vibrant text-white shadow-[0_5px_0_#15803d]"
                                   : isActive
                                     ? "bg-primary text-white shadow-[0_5px_0_#1557b0] ring-4 ring-white"
-                                    : "bg-gray-200 text-gray-400 shadow-[0_4px_0_#d1d5db]"
+                                    : "bg-white text-primary border-2 border-gray-200 shadow-[0_4px_0_#e5e7eb]"
                               }`}
-                              title={
-                                isLocked
-                                  ? `Locked — finish Unit ${unit.unitNumber - 1} first`
-                                  : `Unit ${unit.unitNumber} · ${unit.percentage}%`
-                              }
+                              title={`Unit ${unit.unitNumber} · ${unit.percentage}%`}
                             >
                               {isCompleted ? (
                                 <Check className="w-7 h-7 stroke-[3]" />
-                              ) : isActive ? (
-                                unit.masteredCount > 0 ? (
-                                  <BookOpen className="w-6 h-6" />
-                                ) : (
-                                  <Play className="w-7 h-7 fill-white" />
-                                )
+                              ) : unit.masteredCount > 0 ? (
+                                <BookOpen className="w-6 h-6" />
                               ) : (
-                                <Lock className="w-6 h-6" />
+                                <Play
+                                  className={`w-7 h-7 ${isActive ? "fill-white" : "fill-primary"}`}
+                                />
                               )}
                             </button>
 
@@ -235,13 +222,7 @@ export default function LearningPathView({
                               <p className="text-[10px] font-extrabold uppercase tracking-wider text-text-secondary leading-none">
                                 Unit {unit.unitNumber}
                               </p>
-                              <p
-                                className={`text-lg font-bold leading-tight ${
-                                  isLocked
-                                    ? "text-gray-400"
-                                    : "text-text-primary"
-                                }`}
-                              >
+                              <p className="text-lg font-bold leading-tight text-text-primary">
                                 {unit.percentage}%
                               </p>
                             </div>
@@ -256,21 +237,6 @@ export default function LearningPathView({
           </div>
         )}
       </div>
-
-      {/* Locked-unit hint toast */}
-      <AnimatePresence>
-        {lockedHint !== null && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
-            className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 bg-text-primary text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            Finish Unit {lockedHint - 1} to unlock this
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Progress-by-letter panel (doubles as the letter switcher) */}
       <AnimatePresence>
