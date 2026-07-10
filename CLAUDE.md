@@ -31,6 +31,11 @@ All persistence is `localStorage`, written immediately on every mutation. Keys:
 
 Word status changes flow through `App.handleUpdateStatus` → `triggerWordsSync` → `persistWords`, which both `setWords` and rewrites the cache. Always route mutations through this path so the cache stays consistent.
 
+### Logging & analytics
+
+- **`src/utils/logger.ts`** — structured local logger (`logger.debug/info/warn/error(context, message, data)`). Keeps the last 500 entries in memory (`logger.getAllLogs()`) and mirrors every call to `console[level]`. Use `"module:action"` style contexts (e.g. `"app:boot"`, `"app:handler"`).
+- **`src/utils/analytics.ts`** — GA4 product-event wrapper (`initAnalytics`, `trackEvent`, `trackPageView`, `setAnalyticsUser`). `main.tsx` calls `initAnalytics()` on startup, which loads gtag.js only if `VITE_GA_MEASUREMENT_ID` is set (see `.env.example`) — a no-op otherwise. Every `trackEvent`/`trackPageView` call also goes through `logger`, so events are visible locally even without GA configured. SPA tab changes are tracked as manual `page_view` events (GA's automatic page view is disabled via `send_page_view: false`) since there's no router.
+
 ### Styling
 
 Tailwind CSS v4 via `@tailwindcss/vite`, configured entirely in `src/index.css` (no `tailwind.config.js`). Custom theme tokens are declared in the `@theme` block — use the semantic color names (`primary`, `success-soft`/`success-vibrant`, `warning-*`, `danger-*`, `surface`) and fonts (`font-serif` = DM Serif Display, `font-sans` = DM Sans) rather than raw hex where a token exists. The `btn-3d*` utility classes (in `@layer utilities`) provide the pressable 3D button effect. The layout is mobile-first, capped at `max-w-[600px]`. Icons come from `lucide-react`. Audio pronunciation uses the browser `SpeechSynthesis` API via `src/utils/speech.ts`.

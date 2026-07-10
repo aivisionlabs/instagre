@@ -13,6 +13,7 @@ import {
 import { setProgressFlags, markWordViewed, initSync, teardownSync } from "./data/sync";
 import { getDailyMastered, recordMasteredDelta } from "./data/daily";
 import { logger } from "./utils/logger";
+import { trackEvent, trackPageView, setAnalyticsUser } from "./utils/analytics";
 import { formatDefinitions, wordMatchesDefinition } from "./utils/wordContent";
 import {
   DefinitionsHeading,
@@ -55,10 +56,23 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { speakWord } from "./utils/speech";
+import { preloadSounds } from "./utils/sounds";
 import { isWordUnseen } from "./utils/wordStatus";
 
 type AppView = "loading" | "splash" | "signup" | "signin" | "app";
 type Tab = "Home" | "Browse" | "Mastered" | "Tough Nut" | "Profile";
+
+const TAB_PATH: Record<Tab, string> = {
+  Home: "/",
+  Browse: "/browse",
+  Mastered: "/mastered",
+  "Tough Nut": "/tough-nut",
+  Profile: "/profile",
+};
+const PATH_TAB: Record<string, Tab> = Object.fromEntries(
+  Object.entries(TAB_PATH).map(([tab, path]) => [path, tab]),
+) as Record<string, Tab>;
+const tabForPath = (path: string): Tab => PATH_TAB[path] ?? "Home";
 
 type AuthErrorLike = { message?: string };
 
@@ -121,6 +135,10 @@ export default function App() {
     wordsRef.current = words;
   }, [words]);
 
+  useEffect(() => {
+    preloadSounds();
+  }, []);
+
   /**
    * Land a user in the app: paint instantly from cache, then refresh from
    * Supabase in the background. `p` is the freshly-fetched profile (or null when
@@ -128,6 +146,7 @@ export default function App() {
    */
   const enterApp = async (uid: string, p: UserProfile | null) => {
     logger.info("app:boot", "entering app", { userId: uid });
+    setAnalyticsUser(uid);
 
     const cacheKey = `instagre_profile_${uid}`;
     let prof = p;
@@ -162,8 +181,10 @@ export default function App() {
     setDailyMastered(getDailyMastered(uid));
     setContinueTarget(initialContinue);
     setActiveTab("Home");
+    window.history.replaceState({ tab: "Home" }, "", TAB_PATH.Home);
     setView("app");
     initSync(uid);
+    trackPageView(TAB_PATH.Home, "Home");
 
     logger.info("app:boot", "app shell rendered", { userId: uid });
 
@@ -215,6 +236,40 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Push a new history entry so Android/TWA's back button and the browser's
+  // back gesture step through tabs instead of exiting the app. popstate
+  // (below) reverses it by reading the entry back, not by calling this again.
+  const navigateToTab = (tab: Tab) => {
+    setActiveTab(tab);
+    if (selectedWordForModal) setSelectedWordForModal(null);
+    window.history.pushState({ tab }, "", TAB_PATH[tab]);
+    trackPageView(TAB_PATH[tab], tab);
+  };
+
+  // Back/forward navigation: restore the tab from history state (or the URL,
+  // for forward navigation into an entry pushed before a reload) and close
+  // the word modal if that's the top of the "stack" being popped.
+  useEffect(() => {
+    if (view !== "app") return;
+    const onPopState = (e: PopStateEvent) => {
+      const state = e.state as { tab?: Tab; modal?: boolean } | null;
+      setSelectedWordForModal((prev) => (prev ? null : prev));
+      if (state?.modal) return; // popped back onto the modal's own entry
+      setActiveTab(state?.tab ?? tabForPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [view]);
+
+  const openWordModal = (word: Word) => {
+    setSelectedWordForModal(word);
+    window.history.pushState({ tab: activeTab, modal: true }, "", window.location.pathname);
+  };
+
+  const closeWordModal = () => {
+    window.history.back();
+  };
+
   const dismissCoachMark = (step: CoachMarkStep) => {
     markCoachMarkSeen(step);
     setActiveCoachMark(null);
@@ -247,6 +302,7 @@ export default function App() {
       logger.info("app:handler", "signup handler called");
       const { userId: uid, profile: prof } = await signUpWithMobileDob(p);
       logger.info("app:handler", "signup auth succeeded, entering app");
+      trackEvent("sign_up", { method: "mobile_dob" });
       await enterApp(uid, prof);
     } catch (e) {
       const errorMsg = authErrorMessage(e, "signup");
@@ -266,6 +322,7 @@ export default function App() {
         dob,
       );
       logger.info("app:handler", "signin auth succeeded, entering app");
+      trackEvent("login", { method: "mobile_dob" });
       await enterApp(uid, prof);
     } catch (e) {
       const errorMsg = authErrorMessage(e, "signin");
@@ -279,8 +336,10 @@ export default function App() {
 
   const handleLogout = () => {
     logger.info("app:handler", "logout handler called", { userId });
+    trackEvent("logout");
     teardownSync();
     signOut();
+    setAnalyticsUser(null);
     setUserId(null);
     setProfile(null);
     setWords([]);
@@ -302,6 +361,7 @@ export default function App() {
     void updateProfile(userId, updated)
       .then((newProf) => {
         setProfile(newProf);
+        trackEvent("profile_update");
         logger.info("app:handler", "profile updated successfully", { userId });
       })
       .catch((e) => {
@@ -336,6 +396,19 @@ export default function App() {
       }
     }
 
+    if (flags.mastered !== undefined && flags.mastered !== prev?.mastered) {
+      trackEvent(flags.mastered ? "mark_mastered" : "unmark_mastered", {
+        word_id: wordId,
+        word: prev?.word,
+      });
+    }
+    if (flags.toughNut !== undefined && flags.toughNut !== prev?.toughNut) {
+      trackEvent(flags.toughNut ? "mark_tough_nut" : "unmark_tough_nut", {
+        word_id: wordId,
+        word: prev?.word,
+      });
+    }
+
     // Contextual coachmarks after the user's first mastered / tough-nut mark.
     if (
       flags.mastered === true &&
@@ -353,11 +426,39 @@ export default function App() {
     }
   };
 
+  // Reset the mastered flag for every word starting with `letter` in one pass —
+  // looping handleSetFlags per word would each read the same stale `words`
+  // closure and only the last call would stick.
+  const handleResetLetterMastered = (letter: string) => {
+    const toReset = words.filter(
+      (w) => w.mastered && w.word.toUpperCase().startsWith(letter),
+    );
+    if (toReset.length === 0) return;
+    const resetIdSet = new Set(toReset.map((w) => w.id));
+
+    const updated = words.map((w) =>
+      resetIdSet.has(w.id) ? { ...w, mastered: false } : w,
+    );
+    setWords(updated);
+
+    if (userId) {
+      toReset.forEach((w) =>
+        setProgressFlags(userId, w.id, { mastered: false, toughNut: w.toughNut }),
+      );
+      let nextDailyMastered = 0;
+      for (let i = 0; i < toReset.length; i++) {
+        nextDailyMastered = recordMasteredDelta(userId, -1);
+      }
+      setDailyMastered(nextDailyMastered);
+    }
+  };
+
   const handleMarkViewed = useCallback(
     (wordId: string) => {
       setWords((prev) => {
         const word = prev.find((w) => w.id === wordId);
         if (!word || word.viewed) return prev;
+        trackEvent("view_word", { word_id: wordId, word: word.word });
         if (userId) markWordViewed(userId, wordId);
         return prev.map((w) =>
           w.id === wordId ? { ...w, viewed: true } : w,
@@ -392,7 +493,7 @@ export default function App() {
   const navigateToUnit = (letter: string, unitNumber: number) => {
     setSelectedLetter(letter);
     setBrowseScope({ letter, unitNumber });
-    setActiveTab("Browse");
+    navigateToTab("Browse");
   };
 
   const handlePathSelectLetter = (letter: string) => {
@@ -442,7 +543,7 @@ export default function App() {
 
   const navigateToLetterBrowse = (letter: string) => {
     selectLetter(letter);
-    setActiveTab("Browse");
+    navigateToTab("Browse");
   };
 
   // Search matches
@@ -544,7 +645,7 @@ export default function App() {
             )}
 
             <button
-              onClick={() => setActiveTab("Profile")}
+              onClick={() => navigateToTab("Profile")}
               className="w-8 h-8 rounded-full bg-white/15 border border-white/25 flex items-center justify-center font-bold text-sm cursor-pointer hover:bg-white/25 transition-colors"
               title="Profile"
             >
@@ -578,8 +679,13 @@ export default function App() {
                   <div
                     key={word.id}
                     onClick={() => {
+                      trackEvent("search_select_result", {
+                        query: searchQuery,
+                        word_id: word.id,
+                        word: word.word,
+                      });
                       handleMarkViewed(word.id);
-                      setSelectedWordForModal({ ...word, viewed: true });
+                      openWordModal({ ...word, viewed: true });
                       setIsSearchActive(false);
                       setSearchQuery("");
                     }}
@@ -658,7 +764,7 @@ export default function App() {
               onClearUnitScope={() => setBrowseScope(null)}
               onGoHome={() => {
                 setBrowseScope(null);
-                setActiveTab("Home");
+                navigateToTab("Home");
               }}
               onSetFlags={handleSetFlags}
               onMarkViewed={handleMarkViewed}
@@ -673,6 +779,7 @@ export default function App() {
               selectedLetter={selectedLetter}
               onSetSelectedLetter={selectLetter}
               onSetFlags={handleSetFlags}
+              onResetLetter={handleResetLetterMastered}
               onNavigateToBrowseLetter={navigateToLetterBrowse}
             />
           )}
@@ -722,7 +829,7 @@ export default function App() {
                 type="button"
                 data-nav-tab={tab}
                 data-coach-nav={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => navigateToTab(tab)}
                 className={`relative flex flex-col items-center justify-center p-1 cursor-pointer transition-all ${
                   isActive
                     ? "text-primary"
@@ -753,7 +860,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm max-h-[85vh] overflow-y-auto shadow-2xl border border-gray-100 p-6 space-y-5 relative">
             <button
-              onClick={() => setSelectedWordForModal(null)}
+              onClick={closeWordModal}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-800 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />

@@ -203,6 +203,10 @@ export default function BrowseView({
   const celebrationIdRef = useRef(0);
   const celebrationTimer = useRef<number | null>(null);
   const skipSaveAfterRestoreRef = useRef(false);
+  // Fires "cardFlip" the instant the card is edge-on (rotateY crosses 90deg)
+  // instead of at tap time, so the sound lands with the visual flip.
+  const flipSoundPlayedRef = useRef(false);
+  const prevRotateYRef = useRef(0);
 
   useEffect(
     () => () => {
@@ -580,12 +584,14 @@ export default function BrowseView({
       suppressClick.current = false;
       return;
     }
-    playSound("cardFlip");
+    flipSoundPlayedRef.current = false;
+    prevRotateYRef.current = 180;
     setIsFlipped(false);
   };
 
   const flipToBack = () => {
-    playSound("cardFlip");
+    flipSoundPlayedRef.current = false;
+    prevRotateYRef.current = 0;
     setIsFlipped(true);
   };
 
@@ -756,6 +762,21 @@ export default function BrowseView({
                 },
               }}
               transition={{ type: "spring", damping: 26, stiffness: 170 }}
+              onUpdate={(latest) => {
+                const rotateY =
+                  typeof latest.rotateY === "number"
+                    ? latest.rotateY
+                    : prevRotateYRef.current;
+                const prev = prevRotateYRef.current;
+                if (
+                  !flipSoundPlayedRef.current &&
+                  ((prev < 90 && rotateY >= 90) || (prev > 90 && rotateY <= 90))
+                ) {
+                  flipSoundPlayedRef.current = true;
+                  playSound("cardFlip");
+                }
+                prevRotateYRef.current = rotateY;
+              }}
               drag={isFlipped ? false : "y"}
               dragConstraints={{ top: 0, bottom: 0 }}
               dragElastic={0.6}

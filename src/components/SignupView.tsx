@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { UserProfile } from '../types';
 import { normalizeMobile } from '../data/auth';
+import { COUNTRIES, DEFAULT_COUNTRY } from '../data/countries';
 import { ArrowLeft, User, Calendar, Phone, ArrowRight, GraduationCap, Zap, BadgeCheck } from 'lucide-react';
 
 interface SignupViewProps {
@@ -12,6 +13,7 @@ interface SignupViewProps {
 export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupViewProps) {
   const [fullName, setFullName] = useState('');
   const [dob, setDob] = useState('');
+  const [dialCode, setDialCode] = useState(DEFAULT_COUNTRY.dialCode);
   const [mobile, setMobile] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -29,7 +31,7 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
       await onSignup({
         fullName: fullName.trim(),
         dob,
-        mobile: normalizeMobile(mobile),
+        mobile: normalizeMobile(dialCode + mobile),
         createdAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -103,13 +105,25 @@ export default function SignupView({ onSignup, onGoToSignIn, onBack }: SignupVie
             <label className="text-[11px] font-bold tracking-wider uppercase text-text-primary">
               Mobile Number
             </label>
-            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 h-12 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors">
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 h-12 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors">
               <Phone className="w-4.5 h-4.5 text-gray-400 shrink-0" />
+              <select
+                value={dialCode}
+                onChange={(e) => setDialCode(e.target.value)}
+                aria-label="Country code"
+                className="bg-transparent outline-none text-sm text-text-primary shrink-0 border-r border-gray-200 pr-2"
+              >
+                {COUNTRIES.map((country) => (
+                  <option key={country.code} value={country.dialCode}>
+                    {country.code} {country.dialCode}
+                  </option>
+                ))}
+              </select>
               <input
                 type="tel"
                 value={mobile}
                 onChange={(e) => setMobile(e.target.value)}
-                placeholder="+1 (555) 000-0000"
+                placeholder="555 000 0000"
                 className="bg-transparent w-full outline-none text-sm text-text-primary placeholder-gray-400"
               />
             </div>

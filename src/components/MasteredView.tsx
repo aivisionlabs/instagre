@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Word, WordFlags } from "../types";
 import { speakWord } from "../utils/speech";
-import { Volume2, ChevronRight, CheckCircle2, ChevronDown, BookOpen, Brain } from "lucide-react";
+import { Volume2, ChevronRight, CheckCircle2, ChevronDown, BookOpen, Brain, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { formatDefinitions } from "../utils/wordContent";
 import LetterSelectorModal from "./LetterSelectorModal";
@@ -11,6 +11,7 @@ interface MasteredViewProps {
   selectedLetter: string;
   onSetSelectedLetter: (letter: string) => void;
   onSetFlags: (wordId: string, flags: Partial<WordFlags>) => void;
+  onResetLetter: (letter: string) => void;
   onNavigateToBrowseLetter: (letter: string) => void;
 }
 
@@ -19,6 +20,7 @@ export default function MasteredView({
   selectedLetter,
   onSetSelectedLetter,
   onSetFlags,
+  onResetLetter,
   onNavigateToBrowseLetter,
 }: MasteredViewProps) {
   const [openWordId, setOpenWordId] = useState<string | null>(null);
@@ -80,6 +82,17 @@ export default function MasteredView({
             <span>{masteredWords.length}</span>
           </div>
         </div>
+
+        {masteredInLetter.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onResetLetter(selectedLetter)}
+            className="mt-3 flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-danger-vibrant transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset Letter {selectedLetter}
+          </button>
+        )}
       </div>
 
       {/* Main listing */}
