@@ -77,6 +77,36 @@ export function unitWordRange(unitNumber: number): [number, number] {
   return [start, start + UNIT_SIZE];
 }
 
+/** Number of units a letter's words split into (0 when the letter is empty). */
+export function unitCountForLetter(words: Word[], letter: string): number {
+  return Math.ceil(wordsForLetter(words, letter).length / UNIT_SIZE);
+}
+
+/**
+ * The unit to advance to after finishing (letter, unitNumber): the next unit in
+ * the same letter, or the first unit of the next letter (A→Z) that has words.
+ * Returns null when there is nothing after it.
+ */
+export function resolveNextUnit(
+  words: Word[],
+  letter: string,
+  unitNumber: number,
+): { letter: string; unitNumber: number } | null {
+  const unitsInLetter = unitCountForLetter(words, letter);
+  if (unitNumber < unitsInLetter) {
+    return { letter, unitNumber: unitNumber + 1 };
+  }
+
+  const startCode = letter.toUpperCase().charCodeAt(0);
+  for (let code = startCode + 1; code <= "Z".charCodeAt(0); code++) {
+    const nextLetter = String.fromCharCode(code);
+    if (unitCountForLetter(words, nextLetter) > 0) {
+      return { letter: nextLetter, unitNumber: 1 };
+    }
+  }
+  return null;
+}
+
 /**
  * Build the ordered units for a letter, with mastery stats and status. No unit
  * is ever locked. Exactly one unit is `active` (the highlighted "resume here"

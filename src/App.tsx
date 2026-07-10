@@ -31,7 +31,7 @@ import {
   setLastUnitState,
   type LastUnitState,
 } from "./data/lastUnit";
-import { unitNumberForWord } from "./data/units";
+import { unitNumberForWord, resolveNextUnit } from "./data/units";
 import SplashView from "./components/SplashView";
 import SignupView from "./components/SignupView";
 import SignInView from "./components/SignInView";
@@ -514,6 +514,24 @@ export default function App() {
     navigateToTab("Browse");
   };
 
+  // "Go to next unit" from the Browse unit-complete card: scope Browse to the
+  // next unit in place (no new history entry — we're already on Browse). Falls
+  // back to Home when there's no unit after this one.
+  const goToNextUnit = (letter: string, unitNumber: number) => {
+    const next = resolveNextUnit(words, letter, unitNumber);
+    if (!next) {
+      setBrowseScope(null);
+      navigateToTab("Home");
+      return;
+    }
+    if (userId) {
+      setLastUnitState(userId, next);
+      setLastStartedUnit(next);
+    }
+    setSelectedLetter(next.letter);
+    setBrowseScope(next);
+  };
+
   const handlePathSelectLetter = (letter: string) => {
     setPathLetter(letter);
   };
@@ -800,6 +818,9 @@ export default function App() {
               resumeWordId={browseResumeWordId}
               onSetSelectedLetter={selectLetter}
               onClearUnitScope={() => setBrowseScope(null)}
+              onGoToNextUnit={() =>
+                browseScope && goToNextUnit(browseScope.letter, browseScope.unitNumber)
+              }
               onGoHome={() => {
                 setBrowseScope(null);
                 navigateToTab("Home");

@@ -25,6 +25,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   BookOpen,
   Eye,
   EyeOff,
@@ -93,6 +94,8 @@ interface BrowseViewProps {
   onSetSelectedLetter: (letter: string) => void;
   /** Drop the unit scope and show the whole letter. */
   onClearUnitScope: () => void;
+  /** Advance to the next unit (used by the unit-complete card). */
+  onGoToNextUnit: () => void;
   /** Leave the unit and return to the learning path home. */
   onGoHome: () => void;
   onSetFlags: (wordId: string, flags: Partial<WordFlags>) => void;
@@ -180,6 +183,7 @@ export default function BrowseView({
   resumeWordId,
   onSetSelectedLetter,
   onClearUnitScope,
+  onGoToNextUnit,
   onGoHome,
   onSetFlags,
   onMarkViewed,
@@ -244,6 +248,14 @@ export default function BrowseView({
   const percentage =
     lettersTotal > 0 ? Math.round((masteredInLetter / lettersTotal) * 100) : 0;
 
+  // When browsing a single unit and every word in it is mastered, append a
+  // non-swipeable "unit complete" card as the final slot in the stack. It's
+  // reached by swiping up past the last word; the user leaves it via its CTAs.
+  const unitComplete =
+    unitNumber != null && total > 0 && masteredInLetter === total;
+  const stackCount = unitComplete ? total + 1 : total;
+  const onCompletionCard = unitComplete && focusIndex >= total;
+
   // Restore flashcard position when the letter changes. useLayoutEffect so
   // focusIndex is correct before the save effect runs in the same commit.
   useLayoutEffect(() => {
@@ -271,8 +283,8 @@ export default function BrowseView({
   // When a word leaves the stack (marked Learned) the list shrinks; clamp the
   // focus so we never point past the end and the next word slides into view.
   useEffect(() => {
-    if (total > 0 && focusIndex >= total) setFocusIndex(total - 1);
-  }, [total, focusIndex]);
+    if (stackCount > 0 && focusIndex >= stackCount) setFocusIndex(stackCount - 1);
+  }, [stackCount, focusIndex]);
 
   const current = filteredWords[focusIndex];
 
@@ -305,13 +317,27 @@ export default function BrowseView({
 
   const goTo = (dir: "up" | "down") => {
     if (total === 0) return;
+    // The completion card is terminal — swiping does nothing once you're on it.
+    if (onCompletionCard) return;
     if (current?.id) onMarkViewed(current.id);
     playSound("cardSwipe");
     setExitFlipped(isFlipped);
     setSwipeDir(dir);
-    setFocusIndex((prev) =>
-      dir === "up" ? (prev + 1) % total : (prev - 1 + total) % total,
-    );
+    setFocusIndex((prev) => {
+      if (unitComplete) {
+        // No wrap-around: the last word (total - 1) swipes up into the
+        // completion card (total); swiping down stops at the first word.
+        return dir === "up" ? Math.min(prev + 1, total) : Math.max(prev - 1, 0);
+      }
+      return dir === "up" ? (prev + 1) % total : (prev - 1 + total) % total;
+    });
+  };
+
+  // Leave the completion card and go back to the unit's mastered word cards.
+  const viewMasteredWords = () => {
+    setExitFlipped(false);
+    setSwipeDir("down");
+    setFocusIndex(0);
   };
 
   const handleCardExitComplete = () => {
@@ -723,7 +749,7 @@ export default function BrowseView({
       )}
 
       {/* ------------------------------------------------- Card stage */}
-      {total === 0 || !current ? (
+      {total === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-8 text-gray-400 gap-2">
           <BookOpen className="w-12 h-12 stroke-1" />
           <p className="text-sm">
@@ -744,9 +770,57 @@ export default function BrowseView({
             custom={swipeDir}
             onExitComplete={handleCardExitComplete}
           >
-            <motion.div
-              key={current.id}
-              custom={swipeDir}
+            {onCompletionCard ? (
+              <motion.div
+                key="unit-complete"
+                custom={swipeDir}
+                initial={{ opacity: 0, y: swipeDir === "up" ? 120 : -120 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{
+                  opacity: 0,
+                  y: swipeDir === "up" ? -120 : 120,
+                  transition: {
+                    y: { type: "spring", damping: 26, stiffness: 170 },
+                    opacity: { duration: 0.2 },
+                  },
+                }}
+                transition={{ type: "spring", damping: 26, stiffness: 170 }}
+                className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 gap-5 bg-white"
+              >
+                <div className="w-20 h-20 rounded-full bg-success-soft flex items-center justify-center">
+                  <CheckCircle className="w-10 h-10 text-success-vibrant" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="font-serif text-3xl font-black text-text-primary leading-tight">
+                    Unit {unitNumber} complete!
+                  </h2>
+                  <p className="text-sm text-gray-500 max-w-[280px] mx-auto">
+                    You&apos;ve mastered all {total} words in this unit. Keep the
+                    momentum going.
+                  </p>
+                </div>
+                <div className="w-full max-w-[280px] flex flex-col gap-2.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={onGoToNextUnit}
+                    className="w-full h-12 rounded-xl bg-primary text-white font-bold text-sm flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 transition-colors cursor-pointer active:scale-[0.98]"
+                  >
+                    Go to next unit
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={viewMasteredWords}
+                    className="w-full h-12 rounded-xl bg-gray-100 text-text-primary font-bold text-sm flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer active:scale-[0.98]"
+                  >
+                    View mastered words
+                  </button>
+                </div>
+              </motion.div>
+            ) : current ? (
+              <motion.div
+                key={current.id}
+                custom={swipeDir}
               initial={{ opacity: 0, y: swipeDir === "up" ? 120 : -120 }}
               animate={{ opacity: 1, y: 0, rotateY: isFlipped ? 180 : 0 }}
               exit={{
@@ -1055,7 +1129,8 @@ export default function BrowseView({
                   </div>
                 </div>
               </div>
-            </motion.div>
+              </motion.div>
+            ) : null}
           </AnimatePresence>
         </div>
       )}
