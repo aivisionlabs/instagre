@@ -36,6 +36,7 @@ export default function LearningPathView({
 }: LearningPathViewProps) {
   const [showLetters, setShowLetters] = useState(false);
   const activeNodeRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const sections = buildSectionsForLetter(words, activeLetter, lastStartedUnit);
   const activeUnitNumber = findActiveUnitNumber(
@@ -49,11 +50,23 @@ export default function LearningPathView({
     s.units.some((u) => u.unitNumber === activeUnitNumber),
   );
 
-  // Bring the active unit into view when the letter (or its active unit) changes.
+  // Bring the active unit into view when the letter (or its active unit)
+  // changes. Adjust only scrollTop — never scrollLeft — because the sideways
+  // sway (translateX) + wide side labels would otherwise let scrollIntoView
+  // scroll the column horizontally, clipping the header badge on the left.
   useEffect(() => {
     const node = activeNodeRef.current;
+    const scroller = scrollRef.current;
     if (!node) return;
-    node.scrollIntoView({ block: "center", behavior: "auto" });
+    if (!scroller) {
+      node.scrollIntoView({ block: "center", behavior: "auto" });
+      return;
+    }
+    const sRect = scroller.getBoundingClientRect();
+    const nRect = node.getBoundingClientRect();
+    const delta =
+      nRect.top - sRect.top - (scroller.clientHeight / 2 - nRect.height / 2);
+    scroller.scrollTop += delta;
   }, [activeLetter, activeUnitNumber]);
 
   // Every unit is startable — tapping any node opens it.
@@ -89,7 +102,7 @@ export default function LearningPathView({
       </header>
 
       {/* ---------------------------------------------------- Scrollable path */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-clip">
         {/* Current-letter badge + active section */}
         <div
           className="flex items-center gap-3 pl-7 pr-5 pt-5 pb-2"

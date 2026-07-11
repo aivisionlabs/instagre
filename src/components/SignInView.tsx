@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { normalizeMobile } from '../data/auth';
+import { COUNTRIES, DEFAULT_COUNTRY } from '../data/countries';
 import { ArrowLeft, Phone, Calendar, ArrowRight, BookOpen } from 'lucide-react';
 
 interface SignInViewProps {
@@ -13,6 +14,7 @@ interface SignInViewProps {
  * synthetic Supabase auth email behind the scenes).
  */
 export default function SignInView({ onSignIn, onGoToSignUp, onBack }: SignInViewProps) {
+  const [dialCode, setDialCode] = useState(DEFAULT_COUNTRY.dialCode);
   const [mobile, setMobile] = useState('');
   const [dob, setDob] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export default function SignInView({ onSignIn, onGoToSignUp, onBack }: SignInVie
 
     setSubmitting(true);
     try {
-      await onSignIn(mobile, dob);
+      await onSignIn(normalizeMobile(dialCode + mobile), dob);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign you in.');
       setSubmitting(false);
@@ -68,13 +70,25 @@ export default function SignInView({ onSignIn, onGoToSignUp, onBack }: SignInVie
             <label className="text-[11px] font-bold tracking-wider uppercase text-text-primary">
               Mobile Number
             </label>
-            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 h-12 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors">
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 h-12 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-colors">
               <Phone className="w-4.5 h-4.5 text-gray-400 shrink-0" />
+              <select
+                value={dialCode}
+                onChange={(e) => setDialCode(e.target.value)}
+                aria-label="Country code"
+                className="bg-transparent outline-none text-sm text-text-primary shrink-0 border-r border-gray-200 pr-2"
+              >
+                {COUNTRIES.map((country) => (
+                  <option key={country.code} value={country.dialCode}>
+                    {country.code} {country.dialCode}
+                  </option>
+                ))}
+              </select>
               <input
                 type="tel"
                 value={mobile}
                 onChange={(e) => setMobile(e.target.value)}
-                placeholder="+1 (555) 000-0000"
+                placeholder="555 000 0000"
                 className="bg-transparent w-full outline-none text-sm text-text-primary placeholder-gray-400"
                 autoFocus
               />

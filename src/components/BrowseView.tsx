@@ -194,6 +194,15 @@ export default function BrowseView({
   const [isFlipped, setIsFlipped] = useState(false);
   const [showDefinition, setShowDefinition] = useState(true);
   const [showLetters, setShowLetters] = useState(false);
+  // Unit scope only: when off (default), mastered words are hidden from the
+  // deck. Toggling on reveals them alongside the non-mastered ones.
+  const [showMastered, setShowMastered] = useState(false);
+  // Words mastered *during this deck session* stay visible until the user
+  // re-enters the unit or flips the toggle — so marking a card never yanks it
+  // out from under you. Reset on unit/letter change and on toggle flips.
+  const [keepVisibleIds, setKeepVisibleIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [swipeDir, setSwipeDir] = useState<"up" | "down">("up");
   const [exitFlipped, setExitFlipped] = useState(false);
   const [iconFlies, setIconFlies] = useState<IconFly[]>([]);
@@ -234,45 +243,61 @@ export default function BrowseView({
     return letterWords.slice(start, end);
   };
 
-  // Every word for the letter (or unit) stays in the stack regardless of its
-  // flags — navigation is swipe-only, so marking a word never removes it.
-  const filteredWords = scopeToUnit(
+  // Every word for the letter (or unit), alphabetised. Progress + unit-complete
+  // detection are always computed over this full list, never the filtered deck.
+  const unitWords = scopeToUnit(
     words
       .filter((w) => w.word.toUpperCase().startsWith(selectedLetter))
       .sort((a, b) => a.word.localeCompare(b.word)),
   );
 
-  const total = filteredWords.length;
+  const total = unitWords.length;
   const lettersTotal = total;
-  const masteredInLetter = filteredWords.filter((w) => w.mastered).length;
+  const masteredInLetter = unitWords.filter((w) => w.mastered).length;
   const percentage =
     lettersTotal > 0 ? Math.round((masteredInLetter / lettersTotal) * 100) : 0;
+
+  // The swipe deck. In a unit with the toggle off, mastered words are hidden —
+  // except any mastered during this session (kept visible so the card doesn't
+  // vanish as you mark it). Whole-letter browse always shows every word.
+  const hideMastered = unitNumber != null && !showMastered;
+  const deckWords = hideMastered
+    ? unitWords.filter((w) => !w.mastered || keepVisibleIds.has(w.id))
+    : unitWords;
+  const deckCount = deckWords.length;
 
   // When browsing a single unit and every word in it is mastered, append a
   // non-swipeable "unit complete" card as the final slot in the stack. It's
   // reached by swiping up past the last word; the user leaves it via its CTAs.
   const unitComplete =
     unitNumber != null && total > 0 && masteredInLetter === total;
-  const stackCount = unitComplete ? total + 1 : total;
-  const onCompletionCard = unitComplete && focusIndex >= total;
+  const stackCount = unitComplete ? deckCount + 1 : deckCount;
+  const onCompletionCard = unitComplete && focusIndex >= deckCount;
 
   // Restore flashcard position when the letter changes. useLayoutEffect so
   // focusIndex is correct before the save effect runs in the same commit.
   useLayoutEffect(() => {
     setIsFlipped(false);
     skipSaveAfterRestoreRef.current = true;
-    const letterWords = scopeToUnit(
+    // Entering a unit/letter resets the toggle (default: hide mastered) and the
+    // session keep-set, so the deck starts fresh from these restored values.
+    setShowMastered(false);
+    setKeepVisibleIds(new Set());
+    const scoped = scopeToUnit(
       words
         .filter((w) => w.word.toUpperCase().startsWith(selectedLetter))
         .sort((a, b) => a.word.localeCompare(b.word)),
     );
+    // Mirror the default deck: in a unit, only non-mastered words are shown.
+    const deck =
+      unitNumber != null ? scoped.filter((w) => !w.mastered) : scoped;
 
-    if (letterWords.length === 0) {
+    if (deck.length === 0) {
       setFocusIndex(0);
       return;
     }
     if (resumeWordId) {
-      const idx = letterWords.findIndex((w) => w.id === resumeWordId);
+      const idx = deck.findIndex((w) => w.id === resumeWordId);
       setFocusIndex(idx >= 0 ? idx : 0);
       return;
     }
@@ -286,7 +311,7 @@ export default function BrowseView({
     if (stackCount > 0 && focusIndex >= stackCount) setFocusIndex(stackCount - 1);
   }, [stackCount, focusIndex]);
 
-  const current = filteredWords[focusIndex];
+  const current = deckWords[focusIndex];
 
   useEffect(() => {
     onCurrentWordChange(current?.id ?? null);
@@ -316,7 +341,7 @@ export default function BrowseView({
   };
 
   const goTo = (dir: "up" | "down") => {
-    if (total === 0) return;
+    if (deckCount === 0) return;
     // The completion card is terminal — swiping does nothing once you're on it.
     if (onCompletionCard) return;
     if (current?.id) onMarkViewed(current.id);
@@ -325,20 +350,31 @@ export default function BrowseView({
     setSwipeDir(dir);
     setFocusIndex((prev) => {
       if (unitComplete) {
-        // No wrap-around: the last word (total - 1) swipes up into the
-        // completion card (total); swiping down stops at the first word.
-        return dir === "up" ? Math.min(prev + 1, total) : Math.max(prev - 1, 0);
+        // No wrap-around: the last word (deckCount - 1) swipes up into the
+        // completion card (deckCount); swiping down stops at the first word.
+        return dir === "up"
+          ? Math.min(prev + 1, deckCount)
+          : Math.max(prev - 1, 0);
       }
-      return dir === "up" ? (prev + 1) % total : (prev - 1 + total) % total;
+      return dir === "up"
+        ? (prev + 1) % deckCount
+        : (prev - 1 + deckCount) % deckCount;
     });
   };
 
-  // Leave the completion card and go back to the unit's mastered word cards.
-  const viewMasteredWords = () => {
-    setExitFlipped(false);
+  // Flip the show-mastered toggle. Resets the session keep-set and jumps to the
+  // first card, since the deck's membership (and indices) change.
+  const setShowMasteredTo = (next: boolean) => {
+    setShowMastered(next);
+    setKeepVisibleIds(new Set());
+    setExitFlipped(isFlipped);
     setSwipeDir("down");
     setFocusIndex(0);
   };
+
+  // Leave the completion card via "View mastered words": reveal the mastered
+  // cards by turning the toggle on and dropping to the first word.
+  const viewMasteredWords = () => setShowMasteredTo(true);
 
   const handleCardExitComplete = () => {
     setIsFlipped(false);
@@ -375,6 +411,15 @@ export default function BrowseView({
     const next = !word.mastered;
     onSetFlags(word.id, { mastered: next });
     if (next) {
+      // Toggle off hides mastered words, but keep this one in the deck so the
+      // card doesn't vanish the instant it's marked (it leaves on re-entry).
+      if (hideMastered) {
+        setKeepVisibleIds((prev) => {
+          const nextSet = new Set(prev);
+          nextSet.add(word.id);
+          return nextSet;
+        });
+      }
       playSound("mastered");
       flyIconToTab("mastered", source);
       dismissBrowseTourIfActive();
@@ -726,6 +771,26 @@ export default function BrowseView({
               </div>
             </div>
 
+            {unitNumber != null && (
+              <button
+                type="button"
+                onClick={() => setShowMasteredTo(!showMastered)}
+                title={
+                  showMastered
+                    ? "Hide mastered words"
+                    : "Show mastered words"
+                }
+                aria-pressed={showMastered}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                  showMastered
+                    ? "bg-success-vibrant text-white"
+                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
+              >
+                <CheckCircle className="w-4 h-4" />
+              </button>
+            )}
+
             <button
               type="button"
               data-coach="browse-definition"
@@ -967,7 +1032,7 @@ export default function BrowseView({
                   className="flex flex-col items-center gap-0.5 select-none pointer-events-none"
                 >
                   <span className="text-[9px] text-gray-400">
-                    Word {focusIndex + 1} of {total}
+                    Word {focusIndex + 1} of {deckCount}
                   </span>
                   <ChevronUp className="w-3 h-3 text-gray-200" />
                 </div>
