@@ -227,12 +227,13 @@ export default function App() {
       logger.info("app:boot", "found existing session, entering app");
       void enterApp(session.userId, session.profile);
     } else {
-      const started = localStorage.getItem("instagre_has_started") === "true";
-      const nextView = started ? "signup" : "splash";
+      // No auth session: always show the initial landing (Get Started / Log In).
+      // This prevents users from getting stuck on the signup form after they
+      // previously tapped "Get Started" but didn't complete account creation.
       logger.info("app:boot", "no session found, showing initial view", {
-        view: nextView,
+        view: "splash",
       });
-      setView(nextView);
+      setView("splash");
     }
 
     const unsub = onAuthStateChange((s) => {
@@ -305,7 +306,6 @@ export default function App() {
   }, [activeTab, activeCoachMark]);
 
   const handleGetStarted = () => {
-    localStorage.setItem("instagre_has_started", "true");
     setView("signup");
   };
 
@@ -620,7 +620,6 @@ export default function App() {
       <SplashView
         onGetStarted={handleGetStarted}
         onLogIn={() => {
-          localStorage.setItem("instagre_has_started", "true");
           setView("signin");
         }}
       />

@@ -15,6 +15,10 @@ export default defineConfig(() => {
         // all data in the bundle, this gives complete offline support.
         workbox: {
           globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
+          // Ensure updates apply immediately in TWA/Android WebView.
+          // Without these, the app can keep using an older precached bundle.
+          skipWaiting: true,
+          clientsClaim: true,
           // Google Fonts (DM Sans / DM Serif) are loaded cross-origin from
           // index.css — cache them at runtime so typography survives offline.
           runtimeCaching: [
