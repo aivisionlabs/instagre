@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — InstaGRE</title>
+<meta name="robots" content="index, follow" />
+<style>
+  :root {
+    color-scheme: light;
+    --primary: #1a73e8;
+    --primary-dark: #1557b0;
+    --text: #111827;
+    --text-secondary: #4b5563;
+    --border: #e5e7eb;
+    --surface: #f9fafb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--text);
+    background: #ffffff;
+    line-height: 1.6;
+  }
+  header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #fff;
+    padding: 40px 20px 32px;
+  }
+  header .wrap { max-width: 760px; margin: 0 auto; }
+  header .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 12px;
+    font-family: Georgia, serif;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+  header h1 { font-family: Georgia, serif; font-size: 30px; margin: 0 0 6px; }
+  header p { margin: 0; opacity: 0.85; font-size: 14px; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+  h2 {
+    font-size: 18px;
+    margin: 40px 0 12px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  h2:first-of-type { margin-top: 24px; }
+  h3 { font-size: 15px; margin: 20px 0 8px; }
+  p, li { font-size: 14.5px; color: var(--text-secondary); }
+  ul { padding-left: 20px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    margin: 12px 0 20px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: var(--surface); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); }
+  a { color: var(--primary); }
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout strong { color: var(--text); }
+  footer {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 20px 60px;
+    font-size: 12.5px;
+    color: #9ca3af;
+  }
+  code { background: var(--surface); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="badge">W</div>
+    <h1>InstaGRE Privacy Policy</h1>
+    <p>Last updated: July 22, 2026</p>
+  </div>
+</header>
+
+<main>
+  <p>
+    InstaGRE ("InstaGRE", "we", "us") is a GRE vocabulary study app available as an installable
+    web app and on Google Play. This policy explains what data the app collects, how it is used,
+    who it is shared with, and how you can access, correct, or delete it.
+  </p>
+
+  <div class="callout">
+    <strong>Short version:</strong> InstaGRE stores your account (name, mobile number, date of
+    birth) and your study progress (mastered words, tough-nut flags, streak, test history) so you
+    can pick up where you left off across sessions. We don't show ads, sell your data, or share it
+    with data brokers. If analytics is enabled, we use privacy-respecting, aggregated Google
+    Analytics — never for advertising.
+  </div>
+
+  <h2 id="data-we-collect">1. Information we collect</h2>
+
+  <h3>Account information</h3>
+  <p>When you create an account, we collect:</p>
+  <table>
+    <tr><th>Data</th><th>Why we collect it</th></tr>
+    <tr><td>Full name</td><td>Displayed in your profile inside the app.</td></tr>
+    <tr><td>Mobile number</td><td>Used as your account identifier / username to sign in.</td></tr>
+    <tr><td>Date of birth</td><td>Used as your account password. It is one-way hashed (bcrypt) before storage — we cannot read it back in plain text, and it is never used for age-based advertising or profiling.</td></tr>
+  </table>
+
+  <h3>Study progress and usage data</h3>
+  <p>As you use the app, we store:</p>
+  <ul>
+    <li>Which words you've viewed, marked "Mastered," or flagged as a "Tough Nut"</li>
+    <li>Your daily study streak and daily mastered-word count</li>
+    <li>Quiz/test history (scores, mode, date) where applicable</li>
+    <li>Your current position in the learning path (so "Continue" resumes the right word/unit)</li>
+  </ul>
+  <p>
+    This data is stored locally on your device (via browser <code>localStorage</code>) for instant,
+    offline-first access, and is synced to our database (hosted on Supabase) tied to your account
+    so your progress isn't lost if you reinstall the app or switch devices.
+  </p>
+
+  <h3>Analytics (only if enabled)</h3>
+  <p>
+    If Google Analytics 4 is configured for a given build of the app, we log product events — such
+    as which tab you opened, which word you viewed, or when you marked a word mastered — along with
+    standard technical data GA4 collects automatically (approximate location derived from IP,
+    device/browser type, and a randomly generated analytics identifier). We do not enable Google
+    Signals or ad personalization, and we do not use this data for advertising. If analytics isn't
+    configured for your build, none of this data is collected or sent anywhere.
+  </p>
+
+  <h3>Fonts</h3>
+  <p>
+    The app loads two typefaces (Playfair Display and Inter) from Google Fonts. Loading a font
+    causes your browser to request the font file directly from Google's servers, which — like any
+    web request — exposes your IP address to Google for that request. We do not receive this data
+    ourselves.
+  </p>
+
+  <h3>What we do not collect</h3>
+  <ul>
+    <li>No camera, microphone, contacts, or precise location access</li>
+    <li>No payment or financial information (InstaGRE is free)</li>
+    <li>No advertising identifiers, and no data is used for ads or ad targeting</li>
+    <li>No data is sold or shared with data brokers</li>
+  </ul>
+
+  <h2 id="how-we-use-it">2. How we use your information</h2>
+  <ul>
+    <li>To create and authenticate your account and keep you signed in</li>
+    <li>To save and sync your study progress across sessions and devices</li>
+    <li>To operate core features: streaks, learning-path unlocks, "Continue where you left off"</li>
+    <li>To understand aggregate feature usage and fix bugs (only where analytics is enabled)</li>
+    <li>To respond to support requests you send us</li>
+  </ul>
+
+  <h2 id="sharing">3. Who we share data with</h2>
+  <p>We use a small number of infrastructure providers strictly as data processors — they don't get to use your data for their own purposes:</p>
+  <table>
+    <tr><th>Provider</th><th>Purpose</th></tr>
+    <tr><td>Supabase</td><td>Hosts our database and authentication functions (account records, progress, streaks, test history)</td></tr>
+    <tr><td>Google Analytics (GA4)</td><td>Aggregate, privacy-respecting product analytics (only if enabled for a build)</td></tr>
+    <tr><td>Google Fonts</td><td>Serves the typefaces used in the app's UI</td></tr>
+    <tr><td>Vercel</td><td>Hosts the web app and its static assets</td></tr>
+  </table>
+  <p>We do not otherwise sell, rent, or share your personal information with third parties, and we don't use it for cross-app or cross-site advertising.</p>
+
+  <h2 id="retention">4. Data retention</h2>
+  <p>
+    We retain your account and progress data for as long as your account exists, so the app can
+    keep working the way you expect between sessions. You can delete everything at any time — see
+    below.
+  </p>
+
+  <h2 id="deletion">5. Deleting your account and data</h2>
+  <p>
+    You can delete your account and all associated data at any time, either instantly in-app or by
+    email if you've lost access. Full steps and exactly what gets deleted: see our
+    <a href="/delete-account.html"><strong>Delete Account</strong></a> page.
+  </p>
+  <p>Note: word-content data (the dictionary itself) contains no personal information and isn't affected by account deletion.</p>
+
+  <h2 id="security">6. Security</h2>
+  <p>
+    Your date of birth (used as your account password) is hashed with bcrypt before it's stored —
+    we never store or transmit it in plain text after signup. All traffic between the app and our
+    servers is encrypted in transit (HTTPS). Access to production data is restricted to the
+    developer operating this app.
+  </p>
+
+  <h2 id="children">7. Children's privacy</h2>
+  <p>
+    InstaGRE is intended for GRE test-preparation, i.e. adults and older students, and is not
+    directed at children under 13. We do not knowingly collect personal information from children
+    under 13. If you believe a child has provided us with personal information, contact us at the
+    email below and we will delete it.
+  </p>
+
+  <h2 id="rights">8. Your rights</h2>
+  <p>Depending on where you live, you may have the right to:</p>
+  <ul>
+    <li>Access the personal data we hold about you</li>
+    <li>Correct inaccurate data (editable directly in Profile → Edit Profile for your name)</li>
+    <li>Delete your data (see <a href="#deletion">Section 5</a>)</li>
+    <li>Object to or restrict certain processing</li>
+    <li>Request a copy of your data in a portable format</li>
+  </ul>
+  <p>To exercise any of these rights, email us at <a href="mailto:aivisionlabs555@gmail.com">aivisionlabs555@gmail.com</a>.</p>
+
+  <h2 id="changes">9. Changes to this policy</h2>
+  <p>
+    If we make material changes to this policy, we'll update the "Last updated" date above. Continued
+    use of the app after a change means you accept the updated policy.
+  </p>
+
+  <h2 id="contact">10. Contact us</h2>
+  <p>
+    Questions about this policy or how your data is handled? Email
+    <a href="mailto:aivisionlabs555@gmail.com"> aivisionlabs555@gmail.com</a>.
+  </p>
+</main>
+
+<footer>
+  InstaGRE — GRE vocabulary study app.
+</footer>
+
+</body>
+</html>

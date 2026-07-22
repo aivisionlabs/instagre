@@ -9,6 +9,7 @@ import {
   signOut,
   updateProfile,
   touchStreak,
+  deleteAccount,
 } from "./data/auth";
 import { setProgressFlags, markWordViewed, initSync, teardownSync } from "./data/sync";
 import { getDailyMastered, recordMasteredDelta } from "./data/daily";
@@ -24,11 +25,13 @@ import {
   getContinueState,
   resolveContinueTarget,
   setContinueState,
+  continueKey,
   type ContinueState,
 } from "./data/continue";
 import {
   getLastUnitState,
   setLastUnitState,
+  lastUnitKey,
   type LastUnitState,
 } from "./data/lastUnit";
 import { unitNumberForWord, resolveNextUnit } from "./data/units";
@@ -358,6 +361,35 @@ export default function App() {
     setWords([]);
     setView("signin");
     logger.info("app:handler", "logout completed");
+  };
+
+  // Delete the account server-side, then wipe every local key scoped to this
+  // user (progress, streak, continue/last-unit position, cached profile) so
+  // nothing survives on-device after the account is gone.
+  const handleDeleteAccount = async () => {
+    if (!userId) return;
+    const uid = userId;
+    logger.info("app:handler", "delete account handler called", { userId: uid });
+    await deleteAccount(uid);
+    trackEvent("delete_account");
+
+    [
+      `instagre_progress_${uid}`,
+      `instagre_pending_${uid}`,
+      `instagre_streak_${uid}`,
+      `instagre_profile_${uid}`,
+      `instagre_daily_${uid}`,
+      continueKey(uid),
+      lastUnitKey(uid),
+    ].forEach((key) => localStorage.removeItem(key));
+
+    teardownSync();
+    setAnalyticsUser(null);
+    setUserId(null);
+    setProfile(null);
+    setWords([]);
+    setView("splash");
+    logger.info("app:handler", "delete account completed", { userId: uid });
   };
 
   const handleUpdateProfile = (updated: UserProfile) => {
@@ -853,6 +885,7 @@ export default function App() {
               streak={streak}
               onUpdateProfile={handleUpdateProfile}
               onLogout={handleLogout}
+              onDeleteAccount={handleDeleteAccount}
             />
           )}
 

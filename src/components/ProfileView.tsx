@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Word, UserProfile } from '../types';
-import { User, LogOut, Check, X, Volume2, VolumeX } from 'lucide-react';
+import { User, LogOut, Check, X, Volume2, VolumeX, Trash2, AlertTriangle } from 'lucide-react';
 import { isSoundEffectsEnabled, setSoundEffectsEnabled } from '../utils/speech';
 
 interface ProfileViewProps {
@@ -9,6 +9,7 @@ interface ProfileViewProps {
   streak: number;
   onUpdateProfile: (profile: UserProfile) => void;
   onLogout: () => void;
+  onDeleteAccount: () => Promise<void>;
 }
 
 /** Display a stored yyyy-mm-dd as mm/dd/yyyy; pass through anything unexpected. */
@@ -35,10 +36,14 @@ export default function ProfileView({
   streak,
   onUpdateProfile,
   onLogout,
+  onDeleteAccount,
 }: ProfileViewProps) {
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile.fullName);
   const [soundEnabled, setSoundEnabledLocal] = useState(isSoundEffectsEnabled());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setSoundEnabledLocal(isSoundEffectsEnabled());
@@ -60,6 +65,19 @@ export default function ProfileView({
   const handleCancel = () => {
     setFullName(profile.fullName);
     setEditing(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteAccount();
+    } catch (e) {
+      setDeleting(false);
+      setDeleteError(
+        e instanceof Error ? e.message : 'Could not delete your account. Please try again.',
+      );
+    }
   };
 
   return (
@@ -207,6 +225,61 @@ export default function ProfileView({
         <span>Logout</span>
       </button>
 
+      {/* Danger zone: permanent account + data deletion */}
+      <div className="border-t border-gray-100 pt-5">
+        {!confirmingDelete ? (
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            className="mx-auto flex items-center gap-2 text-gray-400 text-sm font-medium cursor-pointer hover:text-danger-vibrant transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Delete Account</span>
+          </button>
+        ) : (
+          <div className="bg-danger-soft border border-danger-vibrant/20 rounded-2xl p-5 space-y-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-danger-vibrant shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-sm text-danger-vibrant">
+                  Permanently delete your account?
+                </p>
+                <p className="text-xs text-text-secondary mt-1">
+                  This erases your profile, mastered/tough-nut progress, and streak from our
+                  servers and this device. This can't be undone.
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <p className="text-xs text-danger-vibrant font-medium">{deleteError}</p>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="bg-danger-vibrant hover:opacity-90 disabled:opacity-60 text-white h-11 rounded-xl font-bold text-sm cursor-pointer transition-opacity"
+              >
+                {deleting ? 'Deleting…' : 'Yes, Delete'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setDeleteError(null);
+                }}
+                disabled={deleting}
+                className="bg-gray-100 hover:bg-gray-200 text-text-secondary h-11 rounded-xl font-bold text-sm cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-[#e8f0fe] border border-primary/10 rounded-2xl p-5">
@@ -218,6 +291,17 @@ export default function ProfileView({
           <p className="text-xs font-medium text-text-secondary mt-2">Day Streak</p>
         </div>
       </div>
+
+      <p className="text-center pb-2">
+        <a
+          href="/privacy.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-gray-400 hover:text-gray-600 underline"
+        >
+          Privacy Policy
+        </a>
+      </p>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|icons/|.well-known/|sw.js|manifest.webmanifest|registerSW.js|favicon.svg).*)",
+      "source": "/((?!api/|assets/|icons/|.well-known/|sw.js|manifest.webmanifest|registerSW.js|favicon.svg|privacy.html|delete-account.html).*)",
       "destination": "/index.html"
     }
   ],

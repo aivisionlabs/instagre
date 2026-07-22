@@ -86,6 +86,17 @@ export default function SplashView({ onGetStarted, onLogIn }: SplashViewProps) {
             Log In
           </button>
         </p>
+
+        <p className="mt-3 text-center">
+          <a
+            href="/privacy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-[#d6e3ff]/50 hover:text-[#d6e3ff]/80 underline"
+          >
+            Privacy Policy
+          </a>
+        </p>
       </footer>
 
       {/* Subtle texture overlay */}

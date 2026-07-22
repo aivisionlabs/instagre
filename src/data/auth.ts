@@ -215,6 +215,27 @@ export function signOut(): void {
   logger.info('auth:signout', 'signout completed');
 }
 
+/** Permanently delete the account server-side (cascades to progress/streak/test history), then clear the local session. */
+export async function deleteAccount(userId: string): Promise<void> {
+  logger.info('auth:delete', 'account deletion initiated', { userId });
+  const session = readSessionData();
+  if (!session || session.userId !== userId) {
+    throw new Error('Not signed in.');
+  }
+
+  const res = await fetch(apiUrl('auth-delete-account'), {
+    method: 'POST',
+    headers: apiHeaders(session.token),
+  });
+  const data = (await res.json()) as { ok?: boolean; error?: string };
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error ?? 'Could not delete your account.');
+  }
+
+  clearSession();
+  logger.info('auth:delete', 'account deletion completed', { userId });
+}
+
 export async function updateProfile(userId: string, updated: UserProfile): Promise<UserProfile> {
   const session = readSessionData();
   if (!session || session.userId !== userId) {
