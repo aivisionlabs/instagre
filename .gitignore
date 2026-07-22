@@ -10,3 +10,6 @@ coverage/
 .env.*.local
 .vercel
 supabase/functions/.env
+store-assets/
+twa/.gradle/
+twa/local.properties
